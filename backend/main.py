@@ -346,6 +346,11 @@ def get_state(response: Response, user: User = Depends(require_user), db: DBSess
 def put_state(payload: CloudStateBody, request: Request, user: User = Depends(require_user), db: DBSession = Depends(get_db)):
     _verify_origin(request)
     try:
+        # Lock the user's stable row first. Locking only an existing snapshot cannot
+        # serialize two first-time uploads when no snapshot row exists yet.
+        # PostgreSQL holds this row lock until commit, so the next request observes
+        # the committed revision and returns 409 if it submitted a stale revision.
+        db.scalar(select(User.id).where(User.id == user.id).with_for_update())
         snapshot = db.scalar(select(StateSnapshot).where(StateSnapshot.user_id == user.id).with_for_update())
         current_revision = snapshot.revision if snapshot else 0
         if payload.expected_revision != current_revision:
