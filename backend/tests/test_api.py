@@ -203,3 +203,46 @@ def test_logout_revokes_session_and_cloud_access(client: TestClient) -> None:
     assert logged_out.status_code == 204
     assert client.get("/api/auth/me").json()["user"] is None
     assert client.get("/api/me/state").status_code == 401
+
+def test_production_session_cookie_is_secure_and_response_has_hsts(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "COOKIE_SECURE", True)
+    secure_client = TestClient(main.app, base_url="https://testserver")
+    try:
+        response = secure_client.post(
+            "/api/auth/register",
+            headers={"Origin": "https://testserver"},
+            json={"username": "secure_reader", "email": "secure@example.com", "password": "secure-example-pass-123"},
+        )
+        assert response.status_code == 201, response.text
+        cookie = response.headers["set-cookie"].lower()
+        assert "secure" in cookie
+        assert "httponly" in cookie
+        assert "samesite=lax" in cookie
+        assert response.headers["strict-transport-security"].startswith("max-age=31536000")
+        assert response.headers["cache-control"] == "no-store"
+    finally:
+        secure_client.close()
+
+
+def test_oversized_request_is_rejected_before_route_processing(client: TestClient) -> None:
+    declared_size = main.MAX_STATE_BYTES + 1024 * 1024 + 1
+    response = client.post(
+        "/api/auth/login",
+        headers={"Content-Length": str(declared_size), **ORIGIN},
+        content=b"x",
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request body is too large."
+
+
+def test_backend_serves_the_real_1358_frontend_shell(client: TestClient) -> None:
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "text/html" in page.headers.get("content-type", "")
+    assert 'content="1.3.8"' in page.text
+    assert "Every story has a place." in page.text
+
+    api = client.get("/api")
+    assert api.status_code == 200
+    assert api.json()["cloud_state"] == "/api/me/state"
+
