@@ -1,7 +1,7 @@
 # OmniShelf controlled preview checklist
 
 ## Pre-deployment checks (CI)
-- [ ] Free-first Render blueprint contains exactly one Free web service, no Render database, a dashboard-only DATABASE_URL secret, and registration disabled.
+- [x] Free-first Render blueprint contains exactly one Free web service, no Render database, a dashboard-only DATABASE_URL secret, and registration disabled (CI run 38825891605).
 - [x] API tests pass against an isolated SQLite test database, including account snapshot isolation, stale revisions, HTTPS session-cookie flags, security headers and request-body limits.
 - [x] Alembic migrations apply successfully to a fresh SQLite database.
 - [x] Playwright captures current desktop and mobile screenshots.
