@@ -81,6 +81,17 @@ Taxonomy choices recorded:
 5. Run the deployment acceptance checklist and capture screenshots of the exact preview build.
 6. Only then evaluate public-launch readiness and registration requirements.
 
+## Work step in progress — backend verification harness
+
+Date: 2026-10-16
+
+- Added `backend/tests/test_api.py` with isolated SQLite-backed API tests covering version/health response and safety headers, disabled registration, user/email normalization, HttpOnly/SameSite session cookie attributes, duplicate identity rejection, origin validation, cloud-state round trips, revision-conflict protection, account-to-account snapshot isolation, invalid state shape, and logout/session revocation.
+- Added `.github/workflows/omnishelf-1-3-8-checks.yml` with three jobs: API tests, fresh-database Alembic migration check, and desktop/mobile layout-preview image capture as a CI artifact.
+- Source files exist on the isolated 1.3.8 branch. The GitHub Actions API currently reports no workflow runs, so no automated test, migration, or CI screenshot result is claimed yet. A successful run remains required before considering this step validated.
+- No Render resources were created and no paid deployment was attempted. The existing `main` branch and 1.0.0 service are intended to remain untouched.
+- Preview for this turn: the documented frontend URL remains https://omnishelf-1-3-8-preview.onrender.com. A separate static visual layout reference will be shown alongside it because the live page was not accessible to the browser tool in this session.
+- Next: obtain a real CI run, address any failures, review the screenshot artifact, then proceed to backend deployment readiness without enabling public registration.
+
 ## Working rule for future turns
 
 After each meaningful project step:
