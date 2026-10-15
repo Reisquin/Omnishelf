@@ -90,6 +90,13 @@ jobs:
                   except Exception:
                       time.sleep(1)
               desktop.wait_for_timeout(1800)
+              expected_favorites = ["Works", "Characters", "Anime", "Manga", "Novels", "Short Stories", "Arcs", "Writers", "Dynamics", "People"]
+              actual_favorites = [
+                  title.split("· Top 25")[0].strip()
+                  for title in desktop.locator("#profileFavoritesColumn .profile-favorite-panel .panel-title").all_text_contents()
+              ]
+              if actual_favorites != expected_favorites:
+                  raise AssertionError(f"Profile favourites are out of order: {actual_favorites}")
               desktop.screenshot(path="artifacts/omnishelf-1.3.8-desktop.png", full_page=True)
 
               mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
