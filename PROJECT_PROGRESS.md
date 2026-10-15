@@ -62,7 +62,7 @@ Taxonomy choices recorded:
 - Backend source includes account/session and revisioned snapshot foundations, password hashing, rate-limit code, and `/healthz`.
 - The frontend-only HTTPS preview is documented as: https://omnishelf-1-3-8-preview.onrender.com
 - The project has a documented preview URL, but live availability has not been independently confirmed in the latest check.
-- Latest known branch commit at this checkpoint: `b3faa2fc957b0251e488fbb90bd267af1b9060fe` (2026-10-15), “Label hosted frontend as preview while backend awaits billing setup.”
+- Original source baseline when the 1.3.8 checkpoint was first inspected: `b3faa2fc957b0251e488fbb90bd267af1b9060fe` (2026-10-15), “Label hosted frontend as preview while backend awaits billing setup.”
 - Latest known `main` branch commit in the connected repository is `af5698fe1ba902d65e45028615060f9291332f3f` (2026-10-07); `main` contains the 1.0.0 archive. The 1.3.8 branch is kept separate.
 
 ### Known limitations/blockers
@@ -75,22 +75,24 @@ Taxonomy choices recorded:
 ## Next actions
 
 1. Confirm the intended Render workspace/service context before any cloud-resource changes. Do not select a workspace or create paid services without appropriate user confirmation.
-2. Prepare and run local tests for the backend, migrations, auth/session behaviour, snapshot revision conflict handling, and account-data isolation.
-3. Resolve billing/hosting prerequisites before attempting the separate PostgreSQL-backed preview deployment.
-4. Deploy the backend only as a separate service, preserving the existing 1.0.0 service and `main` branch.
-5. Run the deployment acceptance checklist and capture screenshots of the exact preview build.
-6. Only then evaluate public-launch readiness and registration requirements.
+2. Resolve billing/hosting prerequisites and obtain explicit authorization before attempting the separate PostgreSQL-backed preview deployment.
+3. Deploy the backend only as a separate service, preserving the existing 1.0.0 service and `main` branch.
+4. Run the deployment acceptance checklist and capture screenshots of the exact preview build.
+5. Only then evaluate public-launch readiness and registration requirements.
 
-## Work step in progress — backend verification harness
+## Completed work step — backend verification and favourites layout correction
 
 Date: 2026-10-16
 
-- Added `backend/tests/test_api.py` with isolated SQLite-backed API tests covering version/health response and safety headers, disabled registration, user/email normalization, HttpOnly/SameSite session cookie attributes, duplicate identity rejection, origin validation, cloud-state round trips, revision-conflict protection, account-to-account snapshot isolation, invalid state shape, and logout/session revocation.
-- Added `.github/workflows/omnishelf-1-3-8-checks.yml` with three jobs: API tests, fresh-database Alembic migration check, and desktop/mobile layout-preview image capture as a CI artifact.
-- Source files exist on the isolated 1.3.8 branch. The GitHub Actions API currently reports no workflow runs, so no automated test, migration, or CI screenshot result is claimed yet. A successful run remains required before considering this step validated.
-- No Render resources were created and no paid deployment was attempted. The existing `main` branch and 1.0.0 service are intended to remain untouched.
-- Preview for this turn: the documented frontend URL remains https://omnishelf-1-3-8-preview.onrender.com. A separate static visual layout reference will be shown alongside it because the live page was not accessible to the browser tool in this session.
-- Next: obtain a real CI run, address any failures, review the screenshot artifact, then proceed to backend deployment readiness without enabling public registration.
+- Added `backend/tests/test_api.py` with 9 isolated SQLite-backed API tests covering health/version and safety headers, registration-disabled behaviour, identity normalization, session-cookie attributes, duplicate rejection, origin guards, cloud-state round trips, stale-revision protection, per-account snapshot isolation, invalid state payloads, and logout/session revocation.
+- Added `.github/workflows/omnishelf-1-3-8-checks.yml` with CI jobs for API tests, fresh SQLite Alembic migrations, and Playwright desktop/mobile screenshot capture.
+- Updated both `index.html` and `static-preview/index.html` so favourite groups render in the requested order: **Works → Characters → Anime → Manga → Novels → Short Stories → Arcs → Writers → Dynamics → People**.
+- Added a Playwright assertion to the layout-preview job so the expected favourites order is checked against the rendered page, not merely against the source array.
+- **Verified CI run:** https://github.com/Reisquin/Omnishelf/actions/runs/38820246491 — all three jobs completed successfully: `backend-tests`, `migration-check`, and `frontend-layout-preview`. The order assertion passed. A subsequent workflow-only commit `fb1d3716ad8f9c9136681bdc5e5317327fa9dbb1` excludes progress-log-only changes from triggering a full CI run; its run is in progress and does not change app source.
+- CI uploaded real Playwright screenshot artifacts as `omnishelf-1.3.8-layout-previews`. The desktop and mobile snapshots shown alongside this step were captured from the HTML in the repository, not reconstructed mockups. The live preview URL remains https://omnishelf-1-3-8-preview.onrender.com.
+- No Render resources were created and no paid deployment was attempted. The prior deployment record still identifies billing as the blocker for provisioning the isolated PostgreSQL-backed service.
+- Current source/layout correction commits: root `index.html` at `0248b50f892c61f1d2596a503a8ae83e86aa158d`; static preview at `38d1e629eef4940ea5a4ba5fbadc400d61734761`; layout-order assertion at `510ba90fcfbe72302086a0783241d2b500fca1e9`.
+- Next: finish verifying the workflow-only trigger adjustment, then move to backend deployment readiness after billing and resource-authorization prerequisites are resolved.
 
 ## Working rule for future turns
 
