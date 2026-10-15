@@ -1,24 +1,27 @@
 name: OmniShelf 1.3.8 live smoke checks
 
 on:
-  workflow_run:
-    workflows: ["OmniShelf 1.3.8 checks"]
-    types: [completed]
+  push:
     branches:
       - deploy/1.3.8-https-preview
+    paths:
+      - index.html
+      - backend/**
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/omnishelf-1-3-8-live-smoke.yml
 
 permissions:
   contents: read
 
 jobs:
   live-smoke:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'deploy/1.3.8-https-preview' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out the deployed commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
