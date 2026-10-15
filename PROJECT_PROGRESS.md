@@ -115,3 +115,17 @@ After each meaningful project step:
 - distinguish source code, local test results, preview deployment, verified cloud persistence, and production launch as separate states;
 - include a screenshot/visual preview for every build/update where feasible;
 - never describe an unverified build, deploy, integration, or test as completed.
+
+
+## Completed work step — free-first deployment preparation
+
+Date: 2026-10-16
+
+- Added `render.free.yaml` with a separate Docker web service named `omnishelf-1-3-8-free`, the Render `free` plan, the existing isolated branch, `/healthz` health check, HTTPS Secure cookies, disabled registration, and a dashboard-only `DATABASE_URL` secret. It intentionally does not create a Render Postgres database.
+- Preserved the existing paid `render.yaml` only as an optional future upgrade path. The existing `main` branch and 1.0.0 service remain untouched.
+- Added `FREE_DEPLOYMENT_GUIDE.md` documenting Neon Free PostgreSQL, the requirement to keep its pooled connection URI secret, Render Free sleep/storage/usage limitations, setup sequence, safety constraints, and live acceptance tests.
+- Updated `DEPLOYMENT_STATUS.md` and `DEPLOYMENT_CHECKLIST.md` to reflect that the free-first configuration is prepared but not yet deployed.
+- Added a CI job that parses the free blueprint and fails closed unless it defines exactly one Free web service, no Render-managed database, secret-only `DATABASE_URL`, `COOKIE_SECURE=true`, and `REGISTRATION_ENABLED=false`.
+- Current external-provider facts checked against official documentation on 2026-10-16: Render documents that Free web services sleep after 15 idle minutes, local files are ephemeral, and its Free Postgres instances expire after 30 days without backups; Neon announced on 2026-10-02 that its Free plan includes 1 GB Postgres storage per project. These provider limits can change.
+- No Render service or database has been created by this preparation step and no paid resource has been created. Actual deployment still requires explicit workspace selection and a Neon Free project/connection URI. Never commit a connection URI or send it through chat.
+- Next actions: validate CI, confirm the intended Render workspace, connect Neon, create only the Free web service, and then run the live backend acceptance checklist. Keep public registration disabled.
