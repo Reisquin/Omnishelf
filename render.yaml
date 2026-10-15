@@ -1,0 +1,32 @@
+databases:
+  - name: omnishelf-preview-db
+    databaseName: omnishelf
+    user: omnishelf
+    plan: 0.1c-256mb
+    region: singapore
+    postgresMajorVersion: "18"
+    diskSizeGB: 1
+
+services:
+  - type: web
+    name: omnishelf-1-3-8-api-preview
+    runtime: docker
+    plan: 0.5c-512mb
+    region: singapore
+    branch: deploy/1.3.8-https-preview
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: omnishelf-preview-db
+          property: connectionString
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: REGISTRATION_ENABLED
+        value: "false"
+      - key: SESSION_TTL_SECONDS
+        value: "2592000"
+      - key: MAX_STATE_BYTES
+        value: "20971520"
