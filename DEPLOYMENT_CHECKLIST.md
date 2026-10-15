@@ -1,5 +1,15 @@
 # OmniShelf controlled preview checklist
 
+## Pre-deployment checks (CI)
+- [x] API tests pass against an isolated SQLite test database, including account snapshot isolation, stale revisions, HTTPS session-cookie flags, security headers and request-body limits.
+- [x] Alembic migrations apply successfully to a fresh SQLite database.
+- [x] Playwright captures current desktop and mobile screenshots.
+- [x] Browser run has no uncaught JavaScript errors.
+- [x] Mobile page has no horizontal page overflow.
+- [x] Profile Top 25 favourites render in the approved category order.
+- [ ] Exercise database locks and concurrent first-time snapshot writes against PostgreSQL; SQLite CI is not a substitute for a production-dialect check.
+- [ ] Run the live /healthz, account-disabled and cloud snapshot acceptance checks after the isolated PostgreSQL-backed service is deployed.
+
 ## Before service creation
 - [x] Put 1.3.8 frontend and API foundation on an isolated deployment branch.
 - [x] Keep the existing 1.0.0 Render service and `main` branch untouched.
