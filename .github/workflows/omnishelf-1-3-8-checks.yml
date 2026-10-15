@@ -4,10 +4,14 @@ on:
   push:
     branches:
       - deploy/1.3.8-https-preview
+    paths-ignore:
+      - PROJECT_PROGRESS.md
   pull_request:
     branches:
       - main
       - deploy/1.3.8-https-preview
+    paths-ignore:
+      - PROJECT_PROGRESS.md
 
 permissions:
   contents: read
