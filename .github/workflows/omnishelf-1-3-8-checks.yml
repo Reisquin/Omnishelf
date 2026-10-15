@@ -86,7 +86,8 @@ jobs:
           with sync_playwright() as p:
               browser = p.chromium.launch()
               desktop = browser.new_page(viewport={"width": 1440, "height": 1100}, device_scale_factor=1)
-              desktop.on("pageerror", lambda error: print(f"DESKTOP PAGE ERROR: {error}"))
+              desktop_errors = []
+              desktop.on("pageerror", lambda error: desktop_errors.append(str(error)))
               for attempt in range(30):
                   try:
                       desktop.goto("http://127.0.0.1:8000/index.html", wait_until="domcontentloaded", timeout=3000)
@@ -101,12 +102,20 @@ jobs:
               ]
               if actual_favorites != expected_favorites:
                   raise AssertionError(f"Profile favourites are out of order: {actual_favorites}")
+              if desktop_errors:
+                  raise AssertionError(f"Desktop JavaScript errors: {desktop_errors}")
               desktop.screenshot(path="artifacts/omnishelf-1.3.8-desktop.png", full_page=True)
 
               mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
-              mobile.on("pageerror", lambda error: print(f"MOBILE PAGE ERROR: {error}"))
+              mobile_errors = []
+              mobile.on("pageerror", lambda error: mobile_errors.append(str(error)))
               mobile.goto("http://127.0.0.1:8000/index.html", wait_until="domcontentloaded")
               mobile.wait_for_timeout(1800)
+              if mobile_errors:
+                  raise AssertionError(f"Mobile JavaScript errors: {mobile_errors}")
+              overflow = mobile.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
+              if overflow:
+                  raise AssertionError("Mobile layout has horizontal page overflow")
               mobile.screenshot(path="artifacts/omnishelf-1.3.8-mobile.png", full_page=True)
               browser.close()
           PY
