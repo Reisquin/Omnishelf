@@ -1,0 +1,135 @@
+name: OmniShelf 1.3.8 live smoke checks
+
+on:
+  workflow_run:
+    workflows: ["OmniShelf 1.3.8 checks"]
+    types: [completed]
+    branches:
+      - deploy/1.3.8-https-preview
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'deploy/1.3.8-https-preview' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install live-check dependencies
+        run: |
+          python -m pip install "requests>=2.32,<3" "playwright>=1.48,<2"
+          python -m playwright install --with-deps chromium
+
+      - name: Check live health, database, HTTPS headers, and disabled registration
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import requests
+
+          base = "https://omnishelf-1-3-8-free.onrender.com"
+          session = requests.Session()
+          last_error = None
+          health = None
+
+          # Allow the Render Free instance to wake and complete startup migrations.
+          for attempt in range(36):
+              try:
+                  response = session.get(base + "/healthz", timeout=20)
+                  if response.status_code == 200:
+                      health = response
+                      payload = response.json()
+                      if payload == {"status": "ok", "database": "ok", "version": "1.3.8"}:
+                          break
+                      last_error = f"Unexpected health payload: {payload!r}"
+                  else:
+                      last_error = f"Health returned HTTP {response.status_code}: {response.text[:250]}"
+              except Exception as exc:
+                  last_error = repr(exc)
+              time.sleep(10)
+          else:
+              raise AssertionError(f"Live service never reached healthy PostgreSQL state: {last_error}")
+
+          h = health.headers
+          assert h.get("strict-transport-security", "").startswith("max-age="), "Missing HSTS on HTTPS health response"
+          assert h.get("x-content-type-options") == "nosniff", "Missing nosniff header"
+
+          whoami = session.get(base + "/api/auth/me", timeout=20)
+          assert whoami.status_code == 200, f"Who-am-I returned HTTP {whoami.status_code}"
+          assert whoami.headers.get("cache-control") == "no-store", "Auth response should be no-store"
+          assert whoami.json().get("user") is None, "Unexpected session found on a fresh preview"
+
+          # Registration must stay closed: the server checks this before origin validation.
+          registration = session.post(
+              base + "/api/auth/register",
+              json={"username": "previewcheck", "email": "previewcheck@example.invalid", "password": "OnlyForSmokeCheck_123!"},
+              timeout=20,
+          )
+          assert registration.status_code == 403, f"Registration must remain disabled; got HTTP {registration.status_code}"
+          assert "disabled" in registration.text.lower(), "Registration-disabled response wasn't explicit"
+
+          root = session.get(base + "/", timeout=20)
+          assert root.status_code == 200, f"App root returned HTTP {root.status_code}"
+          assert "OmniShelf" in root.text, "OmniShelf app shell missing at root"
+          print(json.dumps({
+              "health_status": health.status_code,
+              "database": health.json()["database"],
+              "version": health.json()["version"],
+              "https_hsts": True,
+              "auth_cache_control": whoami.headers.get("cache-control"),
+              "registration_status": registration.status_code,
+              "root_status": root.status_code
+          }, indent=2))
+          PY
+
+      - name: Capture deployed desktop and mobile previews
+        run: |
+          mkdir -p artifacts
+          python - <<'PY'
+          import time
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          base = "https://omnishelf-1-3-8-free.onrender.com/"
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              desktop = browser.new_page(viewport={"width": 1440, "height": 1100}, device_scale_factor=1)
+              desktop_errors = []
+              desktop.on("pageerror", lambda err: desktop_errors.append(str(err)))
+              desktop.goto(base, wait_until="domcontentloaded", timeout=60000)
+              desktop.wait_for_timeout(2500)
+              assert "OmniShelf" in desktop.title(), f"Unexpected title: {desktop.title()!r}"
+              if desktop_errors:
+                  raise AssertionError(f"Desktop JavaScript errors: {desktop_errors}")
+              desktop.screenshot(path="artifacts/omnishelf-1.3.8-live-desktop.png", full_page=True)
+
+              mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
+              mobile_errors = []
+              mobile.on("pageerror", lambda err: mobile_errors.append(str(err)))
+              mobile.goto(base, wait_until="domcontentloaded", timeout=60000)
+              mobile.wait_for_timeout(2500)
+              if mobile_errors:
+                  raise AssertionError(f"Mobile JavaScript errors: {mobile_errors}")
+              overflow = mobile.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
+              if overflow:
+                  raise AssertionError("Live mobile layout has horizontal page overflow")
+              mobile.screenshot(path="artifacts/omnishelf-1.3.8-live-mobile.png", full_page=True)
+              browser.close()
+          PY
+
+      - name: Upload live acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnishelf-1.3.8-live-acceptance
+          path: artifacts/*.png
+          retention-days: 14
