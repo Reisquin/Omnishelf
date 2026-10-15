@@ -29,7 +29,7 @@
 
 ## Acceptance checks still pending
 
-- [ ] Free-first CI blueprint validation passes.
+- [x] Free-first CI blueprint validation passes (CI run 38825891605).
 - [ ] Deployed `GET /healthz` returns HTTP 200 and database status `ok`.
 - [ ] PostgreSQL Alembic migrations complete.
 - [ ] Secure session-cookie attributes are confirmed over HTTPS.
