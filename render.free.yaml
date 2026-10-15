@@ -1,0 +1,24 @@
+# Free-first OmniShelf 1.3.8 preview.
+# External Neon PostgreSQL is required; do not add a Render Postgres database here.
+# The paid configuration remains separately available in render.yaml.
+services:
+  - type: web
+    name: omnishelf-1-3-8-free
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: deploy/1.3.8-https-preview
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: REGISTRATION_ENABLED
+        value: "false"
+      - key: SESSION_TTL_SECONDS
+        value: "2592000"
+      - key: MAX_STATE_BYTES
+        value: "20971520"
