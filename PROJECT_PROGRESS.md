@@ -129,3 +129,13 @@ Date: 2026-10-16
 - Current external-provider facts checked against official documentation on 2026-10-16: Render documents that Free web services sleep after 15 idle minutes, local files are ephemeral, and its Free Postgres instances expire after 30 days without backups; Neon announced on 2026-10-02 that its Free plan includes 1 GB Postgres storage per project. These provider limits can change.
 - No Render service or database has been created by this preparation step and no paid resource has been created. Actual deployment still requires explicit workspace selection and a Neon Free project/connection URI. Never commit a connection URI or send it through chat.
 - Next actions: validate CI, confirm the intended Render workspace, connect Neon, create only the Free web service, and then run the live backend acceptance checklist. Keep public registration disabled.
+
+
+## Validation result — free-first build checks
+
+Date: 2026-10-16
+
+- GitHub Actions run **38825891605** succeeded across all four jobs: backend API tests, fresh-database migration check, free deployment blueprint safety validation, and desktop/mobile layout preview.
+- The free blueprint guard passed: one free web service only; no Render-managed database; Neon `DATABASE_URL` kept dashboard-secret-only; registration disabled; Secure cookies retained.
+- The latest Playwright artifact is [`omnishelf-1.3.8-layout-previews`](https://github.com/Reisquin/Omnishelf/actions/runs/38825891605). Preview files captured from that run are available in the current ChatGPT working session as `OmniShelf_1.3.8_FreeFirst_Desktop_Crop.png` and `OmniShelf_1.3.8_FreeFirst_Mobile_Crop.png`.
+- These are layout-validation screenshots, not deployed-backend screenshots. Cloud account/sync acceptance remains pending until a Neon Free database is connected and the separate Render Free service is created.
