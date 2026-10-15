@@ -1,0 +1,9 @@
+.git
+*.zip
+bundle-parts/
+screenshots/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+omnishelf-dev.db
+.env
