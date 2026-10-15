@@ -139,3 +139,14 @@ Date: 2026-10-16
 - The free blueprint guard passed: one free web service only; no Render-managed database; Neon `DATABASE_URL` kept dashboard-secret-only; registration disabled; Secure cookies retained.
 - The latest Playwright artifact is [`omnishelf-1.3.8-layout-previews`](https://github.com/Reisquin/Omnishelf/actions/runs/38825891605). Preview files captured from that run are available in the current ChatGPT working session as `OmniShelf_1.3.8_FreeFirst_Desktop_Crop.png` and `OmniShelf_1.3.8_FreeFirst_Mobile_Crop.png`.
 - These are layout-validation screenshots, not deployed-backend screenshots. Cloud account/sync acceptance remains pending until a Neon Free database is connected and the separate Render Free service is created.
+
+
+## Deployment handoff — Render workspace confirmed
+
+Date: 2026-10-16
+
+- User explicitly confirmed using Render's `My Workspace` for the free-first deployment.
+- Read-only resource inventory completed in workspace `tea-db364u7lk1mc739i8udg`: found the existing 1.3.8 static preview and the original 1.0.0 web service; no Render Postgres instances exist. No existing services were modified.
+- Neon is not connected to the current session yet. A Neon connection option was surfaced again so the user can authorize it; until connection and a Free Neon project/pooled URI are available, do not create a backend service that would silently use ephemeral SQLite for supposedly cloud-persistent account data.
+- Next action after Neon is connected: confirm/create a Neon Free Postgres project, keep the connection URI out of chat and Git, deploy only the Render Free service from `render.free.yaml` into the confirmed workspace, and execute live acceptance checks. If any step asks to select a paid plan or authorize a charge, stop.
+- No paid resources created. Registration remains disabled. Existing `main` and 1.0.0 deployment remain untouched.
