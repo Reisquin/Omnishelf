@@ -66,3 +66,8 @@ Date: 2026-10-16
 - Extended `backend/tests/test_postgres_integration.py` with a production-mode HTTP-route test against the disposable PostgreSQL CI service. It seeds test accounts only in the isolated CI database, then closes registration while verifying that an existing account can still log in over HTTPS.
 - The test asserts Secure/HttpOnly/SameSite=Lax session-cookie attributes, HSTS and `Cache-Control: no-store`, cloud-state save/read, stale revision HTTP 409 without overwrite, session revocation on logout, restore after a fresh sign-in, anonymous HTTP 401, and account isolation.
 - This closes a gap in the PostgreSQL regression suite, but it is still **not** a live authenticated Render + Neon test. Production hosted credentials remain unavailable for a safe controlled run; registration stays closed.
+
+
+- **Latest expanded CI result:** [run 38856765191](https://github.com/Reisquin/Omnishelf/actions/runs/38856765191) passed all five jobs, including the new HTTPS + registration-closed PostgreSQL integration scenario. It only used a disposable GitHub Actions PostgreSQL 16 database.
+- **Latest live smoke + screenshot result:** [run 38856765111](https://github.com/Reisquin/Omnishelf/actions/runs/38856765111) passed after the port fix. Fresh desktop/mobile snapshots are in artifact `omnishelf-1.3.8-live-acceptance` (ID `12027606745`, retained through 2026-10-30) and extracted as `OmniShelf_1.3.8_Auth_Check_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Auth_Check_Live_Mobile_Preview.png`.
+- A read-only Neon check confirmed `users=0`, `sessions=0`, `state_snapshots=0`; the migration marker remains present. No hosted test accounts or saved state were created.

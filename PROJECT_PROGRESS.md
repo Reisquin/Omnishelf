@@ -205,3 +205,6 @@ Date: 2026-10-16
 - This test provisions accounts only through the fixture's temporary registration-enabled mode in GitHub Actions, then switches registration off and Secure cookies on before exercising actual FastAPI HTTP routes over HTTPS TestClient.
 - It verifies Secure/HttpOnly/SameSite=Lax cookies, HSTS, `Cache-Control: no-store`, allowed sign-in while registration is disabled, snapshot save/read, stale-revision 409 without overwriting, logout/session revocation, restore after sign-in, and another existing account's empty library.
 - No hosted Neon rows or public registration settings were modified. This improves production-mode confidence but does not substitute for the still-pending end-to-end test against the hosted Render + Neon service.
+
+- **Verification outcome:** CI run `38856765191` passed all five jobs, including PostgreSQL production-mode authentication with registration disabled. Live smoke run `38856765111` also passed and captured fresh desktop/mobile screenshots after the port fix. Artifact ID `12027606745` remains available until 2026-10-30.
+- **Hosted data remains untouched:** read-only Neon counts after the run were `users=0`, `sessions=0`, and `state_snapshots=0`; only the `alembic_version` marker remains.
