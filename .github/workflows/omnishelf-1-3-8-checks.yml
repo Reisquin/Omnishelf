@@ -213,6 +213,14 @@ jobs:
         run: python -m pip install -r backend/requirements-dev.txt
       - name: Apply the versioned migrations to PostgreSQL
         run: python -m alembic -c backend/alembic.ini upgrade head
+      - name: Drill logical PostgreSQL backup and restore
+        env:
+          BACKUP_RESTORE_TEST_DSN: postgresql://postgres:postgres@127.0.0.1:5432/omnishelf_test
+          PGPASSWORD: postgres
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          python scripts/backup_restore_drill.py
       - name: Test PostgreSQL sessions and concurrent cloud saves
         run: python -m pytest -c backend/pytest.ini backend/tests/test_postgres_integration.py -q
 
