@@ -123,6 +123,37 @@ class MockCloudAPI:
         self.respond(route, {"detail": f"Unexpected mocked API request: {method} {path}"}, 404)
 
 
+
+def read_saved_state(page):
+    """Read the app's preferred persistence layer (IndexedDB, with localStorage fallback)."""
+    return page.evaluate("""async () => {
+        const fromLocalStorage = () => {
+            const raw = localStorage.getItem('omnishelf-state');
+            try { return raw ? JSON.parse(raw) : null; } catch (_) { return null; }
+        };
+        if (localStorage.getItem('omnishelf-storage-backend') === 'localStorage') {
+            return fromLocalStorage();
+        }
+        try {
+            const db = await new Promise(resolve => {
+                const request = indexedDB.open('OmniShelfLocal', 1);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+                request.onblocked = () => resolve(null);
+            });
+            if (db && db.objectStoreNames.contains('state')) {
+                const saved = await new Promise(resolve => {
+                    const request = db.transaction('state', 'readonly').objectStore('state').get('main');
+                    request.onsuccess = () => resolve(request.result || null);
+                    request.onerror = () => resolve(null);
+                });
+                db.close();
+                if (saved) return saved;
+            }
+        } catch (_) {}
+        return fromLocalStorage();
+    }""")
+
 def main() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     handler = partial(QuietHandler, directory=str(ROOT))
@@ -196,10 +227,7 @@ def main() -> None:
             # Restore the new remote version and check that the browser copy changes.
             page.locator("#cloudRestoreBtn").click()
             page.get_by_text("Restored cloud revision 2 to this browser.", exact=True).wait_for(timeout=10000)
-            restored = page.evaluate("""() => {
-                const raw = localStorage.getItem('omnishelf-state');
-                return raw ? JSON.parse(raw) : null;
-            }""")
+            restored = read_saved_state(page)
             assert restored and isinstance(restored.get("works"), list), "Restored library was not saved locally."
             assert any(work.get("title") == RESTORED_TITLE for work in restored["works"]), (
                 "Restore should replace the browser library with the latest cloud snapshot."
@@ -208,10 +236,7 @@ def main() -> None:
             # Sign-out must return to sign-in while leaving local-only data intact.
             page.locator("#cloudLogoutBtn").click()
             page.get_by_text("Signed out. Your local browser data remains available.", exact=True).wait_for(timeout=10000)
-            after_logout = page.evaluate("""() => {
-                const raw = localStorage.getItem('omnishelf-state');
-                return raw ? JSON.parse(raw) : null;
-            }""")
+            after_logout = read_saved_state(page)
             assert after_logout and any(work.get("title") == RESTORED_TITLE for work in after_logout.get("works", [])), (
                 "Signing out must not delete the browser's local library."
             )
@@ -227,7 +252,10 @@ def main() -> None:
             browser = None
     finally:
         if browser is not None:
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                pass
         server.shutdown()
         server.server_close()
 
