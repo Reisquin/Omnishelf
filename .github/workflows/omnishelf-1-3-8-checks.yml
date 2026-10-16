@@ -163,6 +163,8 @@ jobs:
               mobile.screenshot(path="artifacts/omnishelf-1.3.8-mobile.png", full_page=True)
               browser.close()
           PY
+      - name: Exercise account and cloud-sync screens with an isolated mocked API
+        run: python scripts/test_cloud_sync_ui.py
       - name: Upload layout preview images
         uses: actions/upload-artifact@v4
         with:
