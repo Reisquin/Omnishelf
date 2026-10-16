@@ -45,7 +45,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 - Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. API-level cookie tests pass in CI.
 - Stale-revision (409) rejection, PostgreSQL concurrent first writes, sign-out/sign-in snapshot persistence, and per-account isolation now pass automated tests against a disposable PostgreSQL 16 CI database. Running those same authenticated scenarios against the hosted Render + Neon pair remains pending. Public registration stays disabled; do not expose a registration window just to test these.
 - The Render API used to create the service did not expose its native health-check-path setting. The deployed smoke workflow explicitly checks `/healthz`; `render.free.yaml` declares `healthCheckPath: /healthz` for Blueprint-based recreation.
-- No backup/restore drill or independent security review has been completed. Do not consider the site production-ready yet.
+- Manual native-snapshot/restore and data-bearing PostgreSQL dump/restore drills passed on 2026-10-16. Automated snapshot scheduling is not enabled for this Neon project, so recurring backup policy remains open; independent security review is also pending. Do not consider the site production-ready yet.
 
 ## Current free-tier constraints
 
@@ -56,7 +56,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 
 ## Before public launch
 
-Email verification, password recovery, account deletion/export, shared rate-limiting/abuse controls, backup and restore tests, independent security review, and provider/licensing review are still required. Keep public registration disabled until these are complete.
+Email verification, password recovery, account deletion/export, shared rate-limiting/abuse controls, an enabled production backup schedule/retention policy, independent security review, and provider/licensing review remain required. The backup/restore drill passed, but automated snapshots are not enabled for this Neon project. Keep public registration disabled until the remaining controls are complete.
 
 
 ## Authenticated flow coverage — production-mode PostgreSQL test
@@ -106,4 +106,13 @@ Date: 2026-10-16
 - CI passed: [run 38862355750](https://github.com/Reisquin/Omnishelf/actions/runs/38862355750); all five jobs passed. Both staging and pre-existing preview smoke jobs succeeded in [run 38862355701](https://github.com/Reisquin/Omnishelf/actions/runs/38862355701).
 - Latest screenshots are in omnishelf-1.3.8-auth-staging-previews (artifact ID 12029526545) and omnishelf-1.3.8-live-acceptance (artifact ID 12029118953), available through 2026-10-30.
 - Remaining public-launch work is unchanged: email verification/recovery/deletion/export, shared abuse/rate limits, backup and restore drill, independent security review, and provider/licensing review. The acceptance harness is not a public feature and regular registration remains disabled.
+
+## Backup and restore drill — 2026-10-16
+
+- **Data-bearing logical backup + restore passed in CI:** [run 38864850286](https://github.com/Reisquin/Omnishelf/actions/runs/38864850286), all five jobs green. The new scripts/backup_restore_drill.py seeds one non-login fixture in the disposable PostgreSQL 16 CI service, makes a custom-format pg_dump archive, restores it into a fresh database with pg_restore, and compares the migration version, four application/migration tables, snapshot foreign key, account row, revision 42, and exact library-canary payload. The 7,233-byte archive was kept only in the ephemeral runner and never uploaded. The restore database is dropped by the script; the test source is discarded with the CI service.
+- **Native Neon snapshot/restore completed:** manual snapshot snap-nameless-thunder-ao24daoi (omnishelf-backup-restore-drill-2026-10-16) was created from the original primary branch br-mute-lake-aonh60ev. A separate recovered branch br-holy-meadow-aoztug2u was restored from it. Read-only queries on the original and recovered branches show users=0, sessions=0, state_snapshots=0 and migration 001_initial_backend; this native snapshot validates recovery of the empty baseline schema/migration marker, while the CI dump/restore test validates recovery of non-empty account/library rows.
+- The original primary branch is again named main and is both primary=true and default=true. The recovered branch remains separate and non-default. Staging and primary branch row counts remain empty.
+- **Recurring backup schedule is not configured:** an attempt to set a daily schedule on the primary branch was rejected because “backup schedule creation is not enabled for this project.” The manual snapshot expires at 2026-10-30T00:00:00Z; it is a drill/recovery point, not a long-term recurring policy.
+- One isolated drill-source branch (br-old-violet-aoe919fi, backup-restore-drill-source-2026-10-16) retains exactly one synthetic, non-login canary account and its snapshot as test evidence. It is not the primary or staging branch and no Render service uses it. It was not deleted because branch deletion/data deletion is destructive; remove it only after explicit approval.
+- Latest live-preview smoke passed in [run 38864850271](https://github.com/Reisquin/Omnishelf/actions/runs/38864850271). Desktop/mobile screenshots are in artifact omnishelf-1.3.8-live-acceptance, ID 12030607732, available until 2026-10-30.
 

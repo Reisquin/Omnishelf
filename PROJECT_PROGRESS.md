@@ -248,3 +248,15 @@ Date: 2026-10-16
 - Fresh live screenshots are in workflow artifacts omnishelf-1.3.8-auth-staging-previews (ID 12029526545) and omnishelf-1.3.8-live-acceptance (ID 12029118953), available until 2026-10-30.
 - The hosted authentication milestone is now closed. Remaining before public launch: account verification/recovery/deletion/export, shared rate limiting and abuse controls, database backup/restore drill, independent security review, and data-provider/licensing review. Public registration remains disabled.
 
+## Completed work step — backup/restore drill and CI regression test
+
+Date: 2026-10-16
+
+- Added scripts/backup_restore_drill.py to the PostgreSQL integration job. It writes a non-login canary user and snapshot into the disposable CI database, creates a PostgreSQL custom-format logical backup, restores it to a newly created database, and verifies the migration marker, application tables, foreign-key constraint, account identity, snapshot revision, and exact work payload. The restore target is dropped automatically; the generated archive stays inside the ephemeral CI runner.
+- The new data-bearing drill passed with all five CI jobs in [run 38864850286](https://github.com/Reisquin/Omnishelf/actions/runs/38864850286). Backup archive size was 7,233 bytes; restored canary snapshot revision was 42.
+- Created manual Neon snapshot snap-nameless-thunder-ao24daoi from the original primary branch and restored it to separate branch br-holy-meadow-aoztug2u. Both the original main and recovered branch report zero users, sessions, and snapshots, with migration 001_initial_backend applied. The native snapshot therefore proves the baseline schema/migration recovery; the CI pg_dump/pg_restore test proves recovery of non-empty user/library rows.
+- Neon rejected creation of an automatic snapshot schedule for this project (“backup schedule creation is not enabled for this project”). The manual snapshot expires 2026-10-30 and should not be treated as recurring protection.
+- One isolated drill-source branch, backup-restore-drill-source-2026-10-16 (br-old-violet-aoe919fi), retains one synthetic non-login canary account and snapshot as evidence; no live service uses it. It was not deleted because destructive branch/data deletion requires explicit approval.
+- Latest live preview smoke passed in [run 38864850271](https://github.com/Reisquin/Omnishelf/actions/runs/38864850271); fresh desktop/mobile previews are available in artifact omnishelf-1.3.8-live-acceptance, ID 12030607732, through 2026-10-30.
+- Remaining: enable a recurring backup strategy when project permissions/plan allow it, and later run a recovery test from that recurring schedule. Registration remains disabled pending account recovery/export/deletion, abuse-control, security, and licensing work.
+
