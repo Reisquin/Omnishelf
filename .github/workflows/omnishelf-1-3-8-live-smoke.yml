@@ -72,6 +72,11 @@ jobs:
           assert whoami.headers.get("cache-control") == "no-store", "Auth response should be no-store"
           assert whoami.json().get("user") is None, "Unexpected session found on a fresh preview"
 
+          # Cloud data and metadata must remain private without an authenticated session.
+          anonymous_state = session.get(base + "/api/me/state", timeout=20)
+          assert anonymous_state.status_code == 401, f"Anonymous cloud-state read should return 401, got {anonymous_state.status_code}"
+          assert anonymous_state.headers.get("cache-control") == "no-store", "Cloud-state response should be no-store"
+
           # Registration must stay closed: the server checks this before origin validation.
           registration = session.post(
               base + "/api/auth/register",
@@ -90,6 +95,7 @@ jobs:
               "version": health.json()["version"],
               "https_hsts": True,
               "auth_cache_control": whoami.headers.get("cache-control"),
+              "anonymous_state_status": anonymous_state.status_code,
               "registration_status": registration.status_code,
               "root_status": root.status_code
           }, indent=2))

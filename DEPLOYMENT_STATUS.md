@@ -10,6 +10,15 @@
 - The existing 1.0.0 Render service and `main` branch remain untouched. The paid `render.yaml` remains an optional upgrade path; it was not used to create the live preview.
 - No paid service/database was intentionally created.
 
+## Cleanup and rollout note — 2026-10-16
+
+- Cleanup commit `ae896fd010d2194b4f13ebb68a9e4452f9ac4562` removes the temporary preview QA route from `backend/main.py`; the source was re-checked and no temporary route/token code remains.
+- The temporary Render QA-token environment variable was set to an empty value before route removal and has not been re-enabled.
+- Neon was checked after cleanup: `users`, `sessions`, and `state_snapshots` each contained zero rows; migration `001_initial_backend` remains applied. No test account or library state was left behind.
+- Render deployment `dep-db8r1g6i0phs738nckq0` built successfully, and logs showed a fresh app instance starting, but Render continued reporting `update_in_progress` with no `deploy_ended` event. Treat that rollout as **not conclusively confirmed** until a new live-smoke run verifies the endpoint again.
+- The preceding smoke run `38853912858` succeeded, but began before that cleanup deployment started; it is not evidence that the cleanup commit finished rolling out.
+- Permanent safeguards are being added to CI to reject reintroduction of the temporary QA hook and to check that anonymous cloud-state reads return HTTP 401 with `Cache-Control: no-store`. This does not replace the still-pending authenticated hosted acceptance tests.
+
 ## Verified live acceptance
 
 Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omnishelf/actions/runs/38851867077. PostgreSQL integration CI also passed against a separate disposable PostgreSQL 16 instance: https://github.com/Reisquin/Omnishelf/actions/runs/38851867171.
