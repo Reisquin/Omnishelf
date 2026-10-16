@@ -555,8 +555,8 @@ def temporary_preview_qa_check(token: str):
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(concurrent_save, ["Concurrent preview write A", "Concurrent preview write B"]))
-        if sorted(results) != [1, 200] and sorted(results) != [200, 409]:
-            # save() returns the revision number (1) for a successful request and HTTP 409 for a conflict.
+        if sorted(results) != [1, 409]:
+            # save() returns revision 1 for the successful request and HTTP 409 for the stale concurrent request.
             raise AssertionError(f"Concurrent first saves produced unexpected results: {results!r}")
         report["checks"]["concurrent_first_snapshot"] = {
             "passed": True,
