@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 
 from backend import main
@@ -35,13 +36,11 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     main.app.dependency_overrides[main.get_db] = override_get_db
     monkeypatch.setattr(main, "REGISTRATION_ENABLED", True)
     monkeypatch.setattr(main, "COOKIE_SECURE", False)
-    main._rate_buckets.clear()
 
     with TestClient(main.app, base_url="http://testserver") as test_client:
         yield test_client
 
     main.app.dependency_overrides.clear()
-    main._rate_buckets.clear()
     test_engine.dispose()
 
 
@@ -139,6 +138,52 @@ def test_login_rejects_untrusted_or_missing_origin(client: TestClient) -> None:
         json={"identifier": "storykeeper", "password": "secure-example-pass-123"},
     )
     assert missing.status_code == 403
+
+def test_auth_rate_limits_are_shared_between_clients_and_expire(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(main._RATE_LIMITS, "login", (2, 900))
+    second_client = TestClient(main.app, base_url="http://testserver")
+    try:
+        first = client.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "unknown-reader", "password": "wrong-password"},
+        )
+        second = second_client.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "unknown-reader", "password": "wrong-password"},
+        )
+        blocked = client.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "unknown-reader", "password": "wrong-password"},
+        )
+        assert first.status_code == 401
+        assert second.status_code == 401
+        assert blocked.status_code == 429
+        assert int(blocked.headers["retry-after"]) > 0
+        assert blocked.headers["cache-control"] == "no-store"
+
+        # Move the shared row beyond its configured window and ensure the counter resets.
+        test_engine = create_engine(f"sqlite:///{tmp_path / 'omnishelf-tests.db'}")
+        try:
+            with test_engine.begin() as connection:
+                connection.execute(
+                    update(main.AuthRateLimit)
+                    .where(main.AuthRateLimit.action == "login")
+                    .values(window_started=datetime.now(timezone.utc) - timedelta(minutes=20), attempts=3)
+                )
+        finally:
+            test_engine.dispose()
+
+        after_window = second_client.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "unknown-reader", "password": "wrong-password"},
+        )
+        assert after_window.status_code == 401
+    finally:
+        second_client.close()
 
 
 def test_cloud_state_round_trip_and_stale_revision_conflict(client: TestClient) -> None:

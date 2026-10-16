@@ -6,13 +6,13 @@ Production: set DATABASE_URL to PostgreSQL, COOKIE_SECURE=true, FRONTEND_ORIGIN 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import secrets
 import time
 import uuid
-from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Generator
@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, create_engine, select, text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, case, create_engine, delete, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session as DBSession, mapped_column, sessionmaker
@@ -80,6 +80,14 @@ class StateSnapshot(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     state_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+class AuthRateLimit(Base):
+    """Shared fixed-window counter keyed by action and an HMAC of the client address."""
+    __tablename__ = "auth_rate_limits"
+    action: Mapped[str] = mapped_column(String(16), primary_key=True)
+    client_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 # Database schema is created/changed only by the versioned Alembic migrations.
 # This prevents each web-worker startup from racing to mutate production schema.
@@ -184,22 +192,75 @@ class CloudStateBody(BaseModel):
             raise ValueError(f"State is larger than the {MAX_STATE_BYTES // (1024 * 1024)} MB cloud-save limit.")
         return value
 
-# Basic process-local throttling to slow automated auth abuse on a single instance.
-# Use a shared rate-limit store (e.g. Redis) before scaling to multiple instances.
-_rate_buckets: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+# Shared database-backed auth throttles: 5 registrations/hour and 10 logins/15 minutes.
+# The HMAC key is consistent across instances because DATABASE_URL is shared; deployments may
+# set RATE_LIMIT_HASH_KEY explicitly to decouple address-hash rotation from database credentials.
 _RATE_LIMITS = {"register": (5, 3600), "login": (10, 900)}
+_RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", DATABASE_URL).encode("utf-8")
 
-def _rate_limit(request: Request, action: str) -> None:
+def _rate_limit(request: Request, action: str, db: DBSession) -> None:
     limit, window = _RATE_LIMITS[action]
-    key = (action, request.client.host if request.client else "unknown")
-    queue = _rate_buckets[key]
-    now = time.monotonic()
-    while queue and now - queue[0] > window:
-        queue.popleft()
-    if len(queue) >= limit:
-        retry = max(1, int(window - (now - queue[0])))
-        raise HTTPException(status_code=429, detail=f"Too many {action} attempts. Try again later.", headers={"Retry-After": str(retry)})
-    queue.append(now)
+    remote_host = request.client.host if request.client else "unknown"
+    client_key = hmac.new(_RATE_LIMIT_HASH_KEY, remote_host.encode("utf-8"), hashlib.sha256).hexdigest()
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=window)
+
+    try:
+        # Occasionally prune old keys so a stream of distinct client addresses cannot
+        # grow the table forever. Most requests avoid an extra DELETE.
+        if secrets.randbelow(100) == 0:
+            db.execute(delete(AuthRateLimit).where(AuthRateLimit.window_started < now - timedelta(days=1)))
+
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert as dialect_insert
+        elif dialect == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert as dialect_insert
+        else:
+            raise HTTPException(status_code=503, detail="Shared authentication rate limiting is unavailable.")
+
+        inserted = dialect_insert(AuthRateLimit).values(
+            action=action,
+            client_key=client_key,
+            window_started=now,
+            attempts=1,
+        )
+        statement = inserted.on_conflict_do_update(
+            index_elements=["action", "client_key"],
+            set_={
+                "window_started": case(
+                    (AuthRateLimit.window_started <= cutoff, now),
+                    else_=AuthRateLimit.window_started,
+                ),
+                # Cap repeated blocked requests at limit+1; Retry-After is based on
+                # the original window start and the counter cannot grow without bound.
+                "attempts": case(
+                    (AuthRateLimit.window_started <= cutoff, 1),
+                    (AuthRateLimit.attempts < limit + 1, AuthRateLimit.attempts + 1),
+                    else_=limit + 1,
+                ),
+            },
+        ).returning(AuthRateLimit.window_started, AuthRateLimit.attempts)
+
+        window_started, attempts = db.execute(statement).one()
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except SQLAlchemyError:
+        db.rollback()
+        # Fail closed rather than bypassing abuse controls when the shared store fails.
+        raise HTTPException(status_code=503, detail="Authentication protection is temporarily unavailable.")
+
+    if window_started.tzinfo is None:
+        window_started = window_started.replace(tzinfo=timezone.utc)
+    remaining = max(1, int((window_started + timedelta(seconds=window) - now).total_seconds()))
+    if attempts > limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many {action} attempts. Try again later.",
+            headers={"Retry-After": str(remaining)},
+        )
 
 def _verify_origin(request: Request) -> None:
     origin = request.headers.get("origin", "").rstrip("/")
@@ -278,7 +339,7 @@ def register(payload: RegisterBody, request: Request, response: Response, db: DB
     if not REGISTRATION_ENABLED:
         raise HTTPException(status_code=403, detail="Account registration is temporarily disabled. Sign-in remains available for existing accounts.")
     _verify_origin(request)
-    _rate_limit(request, "register")
+    _rate_limit(request, "register", db)
     existing = db.scalar(select(User).where((User.username == payload.username) | (User.email == payload.email)))
     if existing:
         raise HTTPException(status_code=409, detail="That username or email is already registered.")
@@ -296,7 +357,7 @@ def register(payload: RegisterBody, request: Request, response: Response, db: DB
 @app.post("/api/auth/login")
 def login(payload: LoginBody, request: Request, response: Response, db: DBSession = Depends(get_db)):
     _verify_origin(request)
-    _rate_limit(request, "login")
+    _rate_limit(request, "login", db)
     identifier = payload.identifier.strip().lower()
     user = db.scalar(select(User).where((User.username == identifier) | (User.email == identifier)))
     valid = False

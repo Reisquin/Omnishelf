@@ -45,7 +45,6 @@ def postgres_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     main.app.dependency_overrides[main.get_db] = override_get_db
     monkeypatch.setattr(main, "REGISTRATION_ENABLED", True)
     monkeypatch.setattr(main, "COOKIE_SECURE", False)
-    main._rate_buckets.clear()
 
     try:
         with TestClient(main.app, base_url="http://testserver") as client:
@@ -55,8 +54,7 @@ def postgres_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         main.app.dependency_overrides.update(previous_overrides)
         main.Base.metadata.drop_all(engine)
         engine.dispose()
-        main._rate_buckets.clear()
-
+    
 
 def register(client: TestClient, username: str, email: str) -> dict:
     response = client.post(
@@ -339,3 +337,30 @@ def test_postgres_account_export_and_deletion_revoke_all_sessions(postgres_clien
         assert postgres_client.get("/api/me/state").status_code == 401
         assert second_session.get("/api/auth/me").json()["user"] is None
         assert second_session.get("/api/me/state").status_code == 401
+
+def test_postgres_rate_limit_is_shared_and_concurrency_safe(postgres_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(main._RATE_LIMITS, "login", (3, 900))
+    clients = [TestClient(main.app, base_url="http://testserver") for _ in range(8)]
+    try:
+        def attempt(client: TestClient):
+            return client.post(
+                "/api/auth/login",
+                headers=ORIGIN,
+                json={"identifier": "unknown-rate-reader", "password": "wrong-password"},
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            responses = list(pool.map(attempt, clients))
+        assert sum(response.status_code == 401 for response in responses) == 3
+        rejected = [response for response in responses if response.status_code == 429]
+        assert len(rejected) == 5
+        assert all(int(response.headers["retry-after"]) > 0 for response in rejected)
+        another = clients[0].post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "unknown-rate-reader", "password": "wrong-password"},
+        )
+        assert another.status_code == 429
+    finally:
+        for test_client in clients:
+            test_client.close()
