@@ -71,3 +71,12 @@ Date: 2026-10-16
 - **Latest expanded CI result:** [run 38856765191](https://github.com/Reisquin/Omnishelf/actions/runs/38856765191) passed all five jobs, including the new HTTPS + registration-closed PostgreSQL integration scenario. It only used a disposable GitHub Actions PostgreSQL 16 database.
 - **Latest live smoke + screenshot result:** [run 38856765111](https://github.com/Reisquin/Omnishelf/actions/runs/38856765111) passed after the port fix. Fresh desktop/mobile snapshots are in artifact `omnishelf-1.3.8-live-acceptance` (ID `12027606745`, retained through 2026-10-30) and extracted as `OmniShelf_1.3.8_Auth_Check_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Auth_Check_Live_Mobile_Preview.png`.
 - A read-only Neon check confirmed `users=0`, `sessions=0`, `state_snapshots=0`; the migration marker remains present. No hosted test accounts or saved state were created.
+
+## Browser-level cloud-sync UI acceptance — 2026-10-16
+
+- Added scripts/test_cloud_sync_ui.py and wired it into the frontend-layout-preview CI job.
+- The Playwright run exercises the account modal, sign-in, first cloud upload, stale-revision conflict messaging, restore from a newer cloud snapshot, and preservation of browser-local data after sign-out. The UI calls are served by a local deterministic mock API; this test does not connect to Render or Neon and does not create hosted accounts or modify hosted libraries.
+- Passed: CI run [38860148427](https://github.com/Reisquin/Omnishelf/actions/runs/38860148427), all five jobs successful, including the mocked cloud-sync browser flow and PostgreSQL integration tests.
+- The workflow generated desktop, mobile, and connected-account-panel screenshots in artifact omnishelf-1.3.8-layout-previews (artifact ID 12028942100, available until 2026-10-30). The connected-account screenshot was extracted as omnishelf-1.3.8-cloud-sync-connected.png.
+- This improves frontend regression coverage but does not close the pending authenticated live Render + Neon acceptance gap. Do not infer live cloud persistence from a mocked UI test; public registration remains disabled.
+
