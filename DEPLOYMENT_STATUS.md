@@ -90,3 +90,20 @@ Date: 2026-10-16
 - Staging screenshots are in artifact omnishelf-1.3.8-auth-staging-previews (artifact ID 12028079809, available until 2026-10-30), extracted as omnishelf-1.3.8-auth-staging-desktop.png and omnishelf-1.3.8-auth-staging-mobile.png.
 - Still pending: an authenticated request-level test against the staging Render URL that creates a temporary account only in the isolated staging branch, tests login/cookies, cloud save/read, stale-revision 409, relogin persistence, and two-account isolation, then removes its own test records. Current workflow runner can reach staging with GET/POST, but this assistant execution environment cannot make arbitrary outbound HTTP requests; no account or test data was seeded. Do not claim this authenticated hosted flow has passed. Registration remains disabled.
 
+## Hosted authenticated acceptance — passed 2026-10-16
+
+- Implemented a self-cleaning hosted acceptance runner at scripts/live_staging_auth_acceptance.py. It requests a short-lived GitHub Actions OIDC token (no stored runner password or database connection string), then calls a narrow seeding/cleanup hook mounted only on the dedicated staging service when OMNISHELF_STAGING_ACCEPTANCE_ENABLED=true.
+- The staging hook verifies GitHub's signed OIDC token, issuer, audience, repository, branch ref, workflow path, push event, run ID, and run attempt. It fails closed unless the service origin is the expected staging URL, HTTPS-only cookies are enabled, and ordinary registration is disabled. The regular free blueprint does not set the staging enable flag, and CI checks that the route is absent on the ordinary live preview.
+- Authenticated live test passed: [workflow run 38862355701](https://github.com/Reisquin/Omnishelf/actions/runs/38862355701). Against the real staging Render + Neon service it verified:
+  - Two runtime-generated test accounts were created through the OIDC-gated hook; no credentials were logged.
+  - Existing-account login worked over HTTPS with Secure, HttpOnly, SameSite=Lax cookies and no-store/HSTS headers while normal public registration remained HTTP 403.
+  - Two concurrent first snapshot saves produced exactly one success and one HTTP 409 conflict.
+  - A stale revision was rejected without overwriting the committed snapshot.
+  - Logout revoked the session; signing back in restored the saved snapshot from PostgreSQL.
+  - A second account started with an empty snapshot and remained isolated from the first account's saved library.
+  - Test cleanup removed both temporary accounts and all associated snapshots/sessions.
+- Post-test read-only verification: both the staging branch and primary preview branch report users=0, sessions=0, and state_snapshots=0, with migration 001_initial_backend applied.
+- CI passed: [run 38862355750](https://github.com/Reisquin/Omnishelf/actions/runs/38862355750); all five jobs passed. Both staging and pre-existing preview smoke jobs succeeded in [run 38862355701](https://github.com/Reisquin/Omnishelf/actions/runs/38862355701).
+- Latest screenshots are in omnishelf-1.3.8-auth-staging-previews (artifact ID 12029526545) and omnishelf-1.3.8-live-acceptance (artifact ID 12029118953), available through 2026-10-30.
+- Remaining public-launch work is unchanged: email verification/recovery/deletion/export, shared abuse/rate limits, backup and restore drill, independent security review, and provider/licensing review. The acceptance harness is not a public feature and regular registration remains disabled.
+
