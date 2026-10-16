@@ -246,3 +246,10 @@ def test_backend_serves_the_real_1358_frontend_shell(client: TestClient) -> None
     assert api.status_code == 200
     assert api.json()["cloud_state"] == "/api/me/state"
 
+def test_staging_acceptance_routes_are_not_available_in_default_preview_mode(
+    client: TestClient,
+) -> None:
+    """Staging bootstrap endpoints must stay absent unless a dedicated service opts in."""
+    assert main.STAGING_ACCEPTANCE_ENABLED is False
+    response = client.post("/__staging/acceptance/cleanup")
+    assert response.status_code in (404, 405)
