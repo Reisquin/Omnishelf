@@ -42,7 +42,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 
 ## Remaining gaps
 
-- Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. API-level cookie tests pass in CI.
+- Post-deployment live smoke and authenticated staging acceptance both passed in run 38871388659 after the new deployments completed. The isolated staging test verified current hosted auth/session behavior and the account flows.
 - Hosted authenticated session, concurrent-save, stale-revision, logout/re-login persistence, two-account isolation, data export, and password-confirmed deletion tests now pass against the real staging Render + Neon pair. Public registration stays disabled; do not expose a registration window just to test these.
 - The Render API used to create the service did not expose its native health-check-path setting. The deployed smoke workflow explicitly checks `/healthz`; `render.free.yaml` declares `healthCheckPath: /healthz` for Blueprint-based recreation.
 - Manual native-snapshot/restore and data-bearing PostgreSQL dump/restore drills passed on 2026-10-16. Automated snapshot scheduling is not enabled for this Neon project, so recurring backup policy remains open; independent security review is also pending. Do not consider the site production-ready yet.
@@ -135,6 +135,14 @@ Date: 2026-10-16
 - Failure to reach the shared rate-limit table fails closed with HTTP 503 rather than silently disabling protection.
 - Added Alembic migration 002_shared_auth_rate_limits; the staging deployment reports that revision and the table exists.
 - CI run 38870722468 passed all five jobs, including cross-client window expiry and a concurrent PostgreSQL test where 8 simultaneous login attempts produced exactly 3 allowed failures and 5 HTTP 429 responses.
-- The related live smoke workflow 38870722459 also passed, though its hosted checks started just before the manual deployment finished. Rerun hosted acceptance after deployment and rely on that post-deploy run as the authoritative live validation.
+- Post-deployment hosted smoke/acceptance run 38871388659 passed after both new deployments were live; the authenticated staging route test completed at 08:06 UTC. Treat this run, rather than earlier overlapping runs, as the current live evidence.
 - Source commit 2eecb50ef2868f2e9c17dfc4f294953a70bf4ccf is live in the isolated staging and preview services. The main release service remains untouched. Public registration stays disabled.
+
+## Final rate-limit validation after deployment — 2026-10-16
+
+- The source code commit 2eecb50ef2868f2e9c17dfc4f294953a70bf4ccf is live on both isolated Render 1.3.8 services. Startup logs for each service record the Alembic upgrade from 001_initial_backend to 002_shared_auth_rate_limits.
+- Post-deployment live acceptance passed in [run 38871388659](https://github.com/Reisquin/Omnishelf/actions/runs/38871388659); the authenticated staging test completed after the staging deployment had become live. Registration remains closed. The staging Neon branch reports migration 002, zero users, zero sessions, and zero snapshots after test cleanup.
+- The latest five-job code/test CI passed in [run 38871388595](https://github.com/Reisquin/Omnishelf/actions/runs/38871388595). The rate-limit regression now also varies later X-Forwarded-For hops while holding the first client IP constant, confirming those requests share a bucket.
+- Fresh screenshot artifacts: auth staging previews ID 12033323664, live preview screenshots ID 12033277508, and layout previews ID 12032499043 (available through 2026-10-30). The combined local screenshot package is linked in the task summary.
+- Known connection-mapping discrepancy: querying the only currently listed Neon project's primary branch still returns 001_initial_backend and no auth_rate_limits table, although Render's preview startup log shows that revision 002 was applied to its configured PostgreSQL. The 1.3.8 preview's actual DATABASE_URL target is not exposed by the available read-only Render service metadata; verify that mapping before assuming Neon main is that service's database. Do not alter database URLs or repoint the service without confirming the intended target.
 
