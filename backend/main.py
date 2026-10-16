@@ -155,7 +155,7 @@ class DeleteAccountBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     password: str = Field(min_length=1, max_length=256)
 
-class CloudStateBody:
+class CloudStateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0)
     state: dict[str, Any]
