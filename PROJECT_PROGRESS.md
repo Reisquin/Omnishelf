@@ -66,19 +66,18 @@ Taxonomy choices recorded:
 - Latest known `main` branch commit in the connected repository is `af5698fe1ba902d65e45028615060f9291332f3f` (2026-10-07); `main` contains the 1.0.0 archive. The 1.3.8 branch is kept separate.
 
 ### Known limitations/blockers
-- The 1.3.8 public preview is **frontend-only**: cloud accounts and cross-device synchronisation are not connected on that deployment; browser-local features can work.
-- The deployment record says provisioning managed PostgreSQL returned Render HTTP 402 because billing/payment details were required. No separate paid backend web service or managed database was created according to that record.
+- The original static preview URL remains frontend-only. A separate free-first full app/API service is now live at https://omnishelf-1-3-8-free.onrender.com, backed by Neon Free PostgreSQL.
+- Historical blocker: paid Render PostgreSQL provision returned HTTP 402. Resolved for the controlled preview by using Neon Free PostgreSQL instead. No paid database or paid backend service was intentionally created; a Render Free web service now exists.
 - Deployment acceptance checks remain open: database health, migrations, secure session-cookie checks, registration disabled, snapshot persistence after redeploy/sign-out/sign-in, stale-revision handling, isolation between test accounts, frontend console checks on desktop/mobile, and screenshots from the exact deployed commit.
 - Public launch still requires email verification, password recovery, account deletion/export, shared rate limiting and abuse prevention, backups/restore testing, security review, and provider/licensing review.
 - Keep public registration disabled until these issues are addressed. Do not claim cloud persistence, account isolation, or production readiness without passing the respective tests.
 
 ## Next actions
 
-1. Confirm the intended Render workspace/service context before any cloud-resource changes. Do not select a workspace or create paid services without appropriate user confirmation.
-2. Resolve billing/hosting prerequisites and obtain explicit authorization before attempting the separate PostgreSQL-backed preview deployment.
-3. Deploy the backend only as a separate service, preserving the existing 1.0.0 service and `main` branch.
-4. Run the deployment acceptance checklist and capture screenshots of the exact preview build.
-5. Only then evaluate public-launch readiness and registration requirements.
+1. Finish authenticated live integration tests with controlled temporary test accounts without enabling public registration.
+2. Verify stale-revision conflict and PostgreSQL concurrent first-write handling against Neon.
+3. Configure native Render healthCheckPath through the dashboard/Blueprint if supported; the smoke workflow already exercises `/healthz`.
+4. Complete email verification/recovery/deletion/export, shared abuse controls, database backup/restore drill, and independent security/licensing reviews before considering public registration.
 
 ## Completed work step — backend verification and favourites layout correction
 
@@ -150,3 +149,20 @@ Date: 2026-10-16
 - Neon is not connected to the current session yet. A Neon connection option was surfaced again so the user can authorize it; until connection and a Free Neon project/pooled URI are available, do not create a backend service that would silently use ephemeral SQLite for supposedly cloud-persistent account data.
 - Next action after Neon is connected: confirm/create a Neon Free Postgres project, keep the connection URI out of chat and Git, deploy only the Render Free service from `render.free.yaml` into the confirmed workspace, and execute live acceptance checks. If any step asks to select a paid plan or authorize a charge, stop.
 - No paid resources created. Registration remains disabled. Existing `main` and 1.0.0 deployment remain untouched.
+
+
+## Completed work step — Free-first backend deployed and live-smoke tested
+
+Date: 2026-10-16
+
+- User explicitly approved using Render `My Workspace`, connecting Neon, and choosing only free-tier resources.
+- Created Neon Free project `omnishelf-preview` in Singapore (`aws-ap-southeast-1`), PostgreSQL 17. Endpoint autoscaling was constrained to 0.25 CU minimum/maximum, and transaction-mode pooling was enabled. The endpoint defaults to provider scale-to-zero behavior; the account did not permit modifying the suspend interval, so no suspend override was applied.
+- The Neon pooled PostgreSQL URI was sent directly into the Render service's `DATABASE_URL` secret. It was not written to GitHub or project files, and it must not be disclosed in chat or screenshots.
+- Created Render web service `omnishelf-1-3-8-free` with plan `free`, Singapore region, Dockerfile, branch `deploy/1.3.8-https-preview`, `COOKIE_SECURE=true`, `REGISTRATION_ENABLED=false`, 30-day session TTL and 20 MB state limit. Service URL: https://omnishelf-1-3-8-free.onrender.com
+- Render deploy `dep-db8mgotg1s2s73832n3g` reached `live`; build succeeded, app started, and Alembic ran migration `001_initial_backend` using PostgreSQL. Neon verified `alembic_version=001_initial_backend` and the `users`, `sessions`, `state_snapshots` and `alembic_version` tables.
+- Added `.github/workflows/omnishelf-1-3-8-live-smoke.yml` to check the live service on relevant pushes, retrying while the Render Free instance wakes. Live smoke run **38826841911** succeeded: `/healthz` 200, DB `ok`, version 1.3.8, HSTS present, nosniff present, `/api/auth/me` 200 with `Cache-Control: no-store`, registration 403, root page 200, no uncaught desktop/mobile JavaScript errors, and no mobile horizontal overflow.
+- Captured full-page screenshots from the actual deployed service (not only local static HTML); artifact `omnishelf-1.3.8-live-acceptance` is attached to the successful run for 14 days. Screenshots were also extracted to the current working session as `OmniShelf_1.3.8_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Live_Mobile_Preview.png`.
+- Corrected the Free-tier guide based on Neon’s current official plan documentation checked on 2026-10-16: 100 CU-hours, 0.5 GB logical storage and 5 GB public network transfer per project per month, with compute scale-to-zero after five minutes; free quota exhaustion suspends compute or rejects over-cap writes rather than causing monetary overage billing. Source: https://neon.com/docs/introduction/plans
+- The Render create-service connector did not expose the native `healthCheckPath` setting; the live smoke workflow explicitly checks `/healthz` and the checked-in `render.free.yaml` declares the path for future Blueprint recreation.
+- No paid resource was intentionally created. The existing 1.0.0 service and `main` branch remain untouched. Public registration remains disabled.
+- Still pending: successful live session cookie check, authenticated cloud snapshot round-trip/sign-out/sign-in persistence, stale revision conflict, two-account live isolation, PostgreSQL concurrent first-write test, and production-readiness safeguards (email verification/recovery/deletion/export, shared rate limits, backups/restores, independent security/licensing reviews). Do not enable registration to perform these tests; use a controlled test-account method first.
