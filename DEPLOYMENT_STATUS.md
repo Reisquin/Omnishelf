@@ -80,3 +80,13 @@ Date: 2026-10-16
 - The workflow generated desktop, mobile, and connected-account-panel screenshots in artifact omnishelf-1.3.8-layout-previews (artifact ID 12028942100, available until 2026-10-30). The connected-account screenshot was extracted as omnishelf-1.3.8-cloud-sync-connected.png.
 - This improves frontend regression coverage but does not close the pending authenticated live Render + Neon acceptance gap. Do not infer live cloud persistence from a mocked UI test; public registration remains disabled.
 
+## Isolated authenticated staging lane — 2026-10-16
+
+- Created a dedicated Neon branch named auth-staging-2026-10-16 (br-tiny-moon-ao9v8tny) from the preview database. It is separate from the primary branch (br-mute-lake-aonh60ev).
+- Created a separate Render Free web service, omnishelf-1-3-8-auth-staging (srv-db8s513bc2fs73c0a9v0), in Singapore at https://omnishelf-1-3-8-auth-staging.onrender.com. It points to the staging database branch; the connection URI is held only in Render environment configuration and is not committed to the repository.
+- The staging service has REGISTRATION_ENABLED=false, COOKIE_SECURE=true, and same-origin HTTPS configuration. No public sign-up window was opened.
+- The staging branch was checked read-only after deployment: users=0, sessions=0, state_snapshots=0; migration 001_initial_backend is present.
+- Passed staging smoke and screenshot workflow: [run 38860955820](https://github.com/Reisquin/Omnishelf/actions/runs/38860955820). It checks PostgreSQL-backed /healthz, HTTPS HSTS and nosniff, anonymous auth identity, anonymous state denial (401/no-store), closed registration (403), root page, JavaScript errors, and mobile overflow. The same workflow also passed the pre-existing live preview smoke checks.
+- Staging screenshots are in artifact omnishelf-1.3.8-auth-staging-previews (artifact ID 12028079809, available until 2026-10-30), extracted as omnishelf-1.3.8-auth-staging-desktop.png and omnishelf-1.3.8-auth-staging-mobile.png.
+- Still pending: an authenticated request-level test against the staging Render URL that creates a temporary account only in the isolated staging branch, tests login/cookies, cloud save/read, stale-revision 409, relogin persistence, and two-account isolation, then removes its own test records. Current workflow runner can reach staging with GET/POST, but this assistant execution environment cannot make arbitrary outbound HTTP requests; no account or test data was seeded. Do not claim this authenticated hosted flow has passed. Registration remains disabled.
+
