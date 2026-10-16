@@ -183,7 +183,7 @@ def main() -> None:
         saved = primary.get(BASE_URL + "/api/me/state", timeout=30)
         assert saved.status_code == 200
         assert saved.headers.get("cache-control") == "no-store"
-        assert saved.headers.get("etag") == '"1"'
+        assert saved.headers.get("etag") == '"1"', "ETag mismatch: " + repr(saved.headers.get("etag")) + "; body=" + repr(saved.text[:400])
         saved_body = saved.json()
         assert saved_body["revision"] == 1 and saved_body["exists"] is True
         committed_title = saved_body["state"]["works"][0]["title"]
