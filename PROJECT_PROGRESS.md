@@ -235,3 +235,16 @@ Date: 2026-10-16
 
 Implement and run a controlled, self-cleaning authenticated acceptance runner for the isolated staging service. Keep the task explicitly marked pending until that runner reports a successful authenticated end-to-end result. Afterward, the next production-readiness work remains backup/restore verification, account verification/recovery/deletion/export, shared rate limiting, independent security review, and data-source/licensing review.
 
+## Completed work step — authenticated hosted staging acceptance
+
+Date: 2026-10-16
+
+- Added a staging-only account bootstrap/cleanup hook that is disabled unless OMNISHELF_STAGING_ACCEPTANCE_ENABLED=true on the dedicated staging service. It requires a signed short-lived GitHub Actions OIDC token with the expected issuer, audience, repository, branch ref, workflow file, and push event; it fails closed if the configured staging origin or HTTPS/registration settings do not match.
+- Added scripts/live_staging_auth_acceptance.py and a workflow job with id-token permission only for the staging acceptance job. The runner creates random passwords at runtime, does not log them, and invokes cleanup in a finally block. No passwords or database connection strings are stored in source.
+- Passed the real hosted authenticated test: workflow run 38862355701. It created two temporary accounts and verified secure session-cookie flags, closed public registration, simultaneous first-save concurrency (one HTTP 200 and one 409), stale revision rejection without overwrite, logout/session revocation, snapshot persistence after a fresh login, and isolation between two accounts.
+- The run's cleanup removed both temporary accounts. Read-only checks confirmed both the dedicated staging branch and primary preview branch now have zero users, zero sessions, and zero state snapshots; migration 001_initial_backend remains present.
+- Preview-route exposure is guarded: the staging hook is mounted only when the staging service explicitly enables it, while the normal free blueprint omits the flag. CI tests the default-off mode and the live preview smoke job confirms the staging-only route is unavailable there.
+- Passed CI run 38862355750 (all five jobs). Staging and ordinary preview live smoke jobs both passed in run 38862355701.
+- Fresh live screenshots are in workflow artifacts omnishelf-1.3.8-auth-staging-previews (ID 12029526545) and omnishelf-1.3.8-live-acceptance (ID 12029118953), available until 2026-10-30.
+- The hosted authentication milestone is now closed. Remaining before public launch: account verification/recovery/deletion/export, shared rate limiting and abuse controls, database backup/restore drill, independent security review, and data-provider/licensing review. Public registration remains disabled.
+
