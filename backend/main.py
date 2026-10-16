@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Generator
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError
 from dotenv import load_dotenv
@@ -372,6 +373,133 @@ def put_state(payload: CloudStateBody, request: Request, user: User = Depends(re
         db.rollback()
         raise HTTPException(status_code=503, detail="Cloud data could not be saved. Your local library is unchanged.")
     return {"exists": True, "revision": snapshot.revision, "updated_at": _iso(snapshot.updated_at), "work_count": len(payload.state.get("works", [])), "review_count": len(payload.state.get("reviews", []))}
+
+
+# A narrow test-account bootstrap for the dedicated staging deployment only.
+# It is absent from the regular preview unless explicitly enabled in that service's env.
+STAGING_ACCEPTANCE_SWITCH = os.getenv("OMNISHELF_STAGING_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+STAGING_ACCEPTANCE_ORIGIN = "https://omnishelf-1-3-8-auth-staging.onrender.com"
+STAGING_ACCEPTANCE_AUDIENCE = "omnishelf-auth-staging"
+STAGING_ACCEPTANCE_WORKFLOW_REF = (
+    "Reisquin/Omnishelf/.github/workflows/omnishelf-1-3-8-live-smoke.yml"
+    "@refs/heads/deploy/1.3.8-https-preview"
+)
+if STAGING_ACCEPTANCE_SWITCH and (
+    REGISTRATION_ENABLED
+    or not COOKIE_SECURE
+    or PUBLIC_APP_ORIGIN != STAGING_ACCEPTANCE_ORIGIN
+):
+    # Fail closed rather than accidentally enabling this control path on a regular app.
+    raise RuntimeError("Staging acceptance hook requires the isolated staging origin, HTTPS cookies, and closed registration.")
+
+STAGING_ACCEPTANCE_ENABLED = STAGING_ACCEPTANCE_SWITCH
+_STAGING_GITHUB_JWKS = (
+    jwt.PyJWKClient("https://token.actions.githubusercontent.com/.well-known/jwks")
+    if STAGING_ACCEPTANCE_ENABLED
+    else None
+)
+
+
+def _validated_staging_actions_claims(token: str) -> dict[str, Any]:
+    if not STAGING_ACCEPTANCE_ENABLED or _STAGING_GITHUB_JWKS is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    try:
+        signing_key = _STAGING_GITHUB_JWKS.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=STAGING_ACCEPTANCE_AUDIENCE,
+            issuer="https://token.actions.githubusercontent.com",
+            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="A valid staging workflow identity is required.")
+    if (
+        claims.get("repository") != "Reisquin/Omnishelf"
+        or claims.get("ref") != "refs/heads/deploy/1.3.8-https-preview"
+        or claims.get("workflow_ref") != STAGING_ACCEPTANCE_WORKFLOW_REF
+        or claims.get("event_name") != "push"
+    ):
+        raise HTTPException(status_code=403, detail="This workflow is not authorized for staging acceptance.")
+    run_id = str(claims.get("run_id", ""))
+    run_attempt = str(claims.get("run_attempt", ""))
+    if not re.fullmatch(r"[0-9]{1,20}", run_id) or not re.fullmatch(r"[0-9]{1,5}", run_attempt):
+        raise HTTPException(status_code=403, detail="The staging workflow identity is incomplete.")
+    return claims
+
+
+def _staging_workflow_identity(request: Request) -> dict[str, Any]:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail="A valid staging workflow identity is required.")
+    return _validated_staging_actions_claims(token.strip())
+
+
+class StagingAcceptancePrepareBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    slot: str = Field(pattern="^[ps]$")
+    password: str = Field(min_length=32, max_length=256)
+
+
+def _cleanup_staging_workflow_users(db: DBSession, run_id: str, slot: str | None = None) -> int:
+    username_pattern = re.compile(rf"^e2e_{re.escape(run_id)}_[0-9]+_[ps]$")
+    email_pattern = re.compile(rf"^e2e-{re.escape(run_id)}-[0-9]+-[ps]@example\\.invalid$")
+    candidates = db.scalars(
+        select(User).where(User.username.like(f"e2e!_{run_id}!_%", escape="!"))
+    ).all()
+    matched = [
+        user for user in candidates
+        if username_pattern.fullmatch(user.username)
+        and email_pattern.fullmatch(user.email)
+        and (slot is None or user.username.endswith(f"_{slot}"))
+    ]
+    for user in matched:
+        db.query(StateSnapshot).filter(StateSnapshot.user_id == user.id).delete(synchronize_session=False)
+        db.query(LoginSession).filter(LoginSession.user_id == user.id).delete(synchronize_session=False)
+        db.delete(user)
+    return len(matched)
+
+
+if STAGING_ACCEPTANCE_ENABLED:
+    @app.post("/__staging/acceptance/prepare", status_code=201, include_in_schema=False)
+    def staging_acceptance_prepare(
+        payload: StagingAcceptancePrepareBody,
+        request: Request,
+        response: Response,
+        db: DBSession = Depends(get_db),
+    ):
+        claims = _staging_workflow_identity(request)
+        run_id = str(claims["run_id"])
+        attempt = str(claims["run_attempt"])
+        slot = payload.slot
+        # Also remove this slot from an interrupted earlier attempt of the same workflow run.
+        _cleanup_staging_workflow_users(db, run_id, slot=slot)
+        username = f"e2e_{run_id}_{attempt}_{slot}"
+        email = f"e2e-{run_id}-{attempt}-{slot}@example.invalid"
+        user = User(username=username, email=email, password_hash=password_hasher.hash(payload.password))
+        db.add(user)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="The staging test account already exists.")
+        response.headers["Cache-Control"] = "no-store"
+        return {"username": username, "email": email, "run_id": run_id, "slot": slot}
+
+    @app.post("/__staging/acceptance/cleanup", include_in_schema=False)
+    def staging_acceptance_cleanup(
+        request: Request,
+        response: Response,
+        db: DBSession = Depends(get_db),
+    ):
+        claims = _staging_workflow_identity(request)
+        deleted = _cleanup_staging_workflow_users(db, str(claims["run_id"]))
+        db.commit()
+        response.headers["Cache-Control"] = "no-store"
+        return {"deleted_accounts": deleted}
+
 
 @app.get("/api")
 def api_root():
