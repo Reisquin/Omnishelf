@@ -103,9 +103,7 @@ def test_postgres_rejects_stale_revision_without_overwriting_latest_state(postgr
     )
     assert stale.status_code == 409, stale.text
 
-    latest = postgres_client.get(
-        "/api/me/state", headers={"Cookie": f"{main.COOKIE_NAME}={token}"}
-    )
+    latest = postgres_client.get("/api/me/state")
     assert latest.status_code == 200
     assert latest.json()["revision"] == 1
     assert latest.json()["state"]["works"][0]["title"] == "First committed version"
@@ -126,7 +124,7 @@ def test_postgres_serializes_concurrent_first_snapshot_writes(postgres_client: T
             start_together.wait(timeout=10)
             return client.put(
                 "/api/me/state",
-                headers=ORIGIN,
+                headers={**ORIGIN, "Cookie": f"{main.COOKIE_NAME}={token}"},
                 json=state_payload(title, expected_revision=0),
             )
 
@@ -142,7 +140,7 @@ def test_postgres_serializes_concurrent_first_snapshot_writes(postgres_client: T
         {"status": response.status_code, "body": response.text} for response in responses
     ]
 
-    latest = postgres_client.get("/api/me/state")
+    latest = postgres_client.get("/api/me/state", headers={"Cookie": f"{main.COOKIE_NAME}={token}"})
     assert latest.status_code == 200
     assert latest.json()["revision"] == 1
     assert latest.json()["state"]["works"][0]["title"] in {
