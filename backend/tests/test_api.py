@@ -246,6 +246,71 @@ def test_backend_serves_the_real_1358_frontend_shell(client: TestClient) -> None
     assert api.status_code == 200
     assert api.json()["cloud_state"] == "/api/me/state"
 
+def test_account_export_includes_library_but_never_credentials_or_sessions(client: TestClient) -> None:
+    register(client)
+    saved = client.put("/api/me/state", headers=ORIGIN, json=state_payload("Exportable library"))
+    assert saved.status_code == 200
+
+    exported = client.get("/api/me/export")
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/json")
+    assert "attachment" in exported.headers.get("content-disposition", "").lower()
+    assert exported.headers["cache-control"] == "no-store"
+    document = exported.json()
+    assert document["format"] == "omnishelf-account-export"
+    assert document["version"] == 1
+    assert document["account"]["username"] == "storykeeper"
+    assert document["account"]["email"] == "reader@example.com"
+    assert document["cloud_library"]["exists"] is True
+    assert document["cloud_library"]["revision"] == 1
+    assert document["cloud_library"]["state"]["works"][0]["title"] == "Exportable library"
+    encoded = __import__("json").dumps(document).lower()
+    assert "password_hash" not in encoded
+    assert "token_hash" not in encoded
+    assert '"sessions"' not in encoded
+
+
+def test_account_deletion_requires_password_and_revokes_every_session(client: TestClient) -> None:
+    register(client)
+    saved = client.put("/api/me/state", headers=ORIGIN, json=state_payload("Private before deletion"))
+    assert saved.status_code == 200
+
+    second_client = TestClient(main.app, base_url="http://testserver")
+    try:
+        login = second_client.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={"identifier": "storykeeper", "password": "secure-example-pass-123"},
+        )
+        assert login.status_code == 200, login.text
+
+        wrong_password = client.request(
+            "DELETE",
+            "/api/me/account",
+            headers=ORIGIN,
+            json={"password": "incorrect-password"},
+        )
+        assert wrong_password.status_code == 403
+        assert client.get("/api/auth/me").json()["user"] is not None
+        assert client.get("/api/me/state").json()["state"]["works"][0]["title"] == "Private before deletion"
+
+        deleted = client.request(
+            "DELETE",
+            "/api/me/account",
+            headers=ORIGIN,
+            json={"password": "secure-example-pass-123"},
+        )
+        assert deleted.status_code == 204
+        assert "max-age=0" in deleted.headers.get("set-cookie", "").lower()
+        assert client.get("/api/auth/me").json()["user"] is None
+        assert client.get("/api/me/state").status_code == 401
+        assert second_client.get("/api/auth/me").json()["user"] is None
+        assert second_client.get("/api/me/state").status_code == 401
+        assert client.get("/api/me/export").status_code == 401
+    finally:
+        second_client.close()
+
+
 def test_staging_acceptance_routes_are_not_available_in_default_preview_mode(
     client: TestClient,
 ) -> None:

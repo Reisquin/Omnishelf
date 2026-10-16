@@ -151,7 +151,11 @@ class LoginBody(BaseModel):
     identifier: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
 
-class CloudStateBody(BaseModel):
+class DeleteAccountBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: str = Field(min_length=1, max_length=256)
+
+class CloudStateBody:
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0)
     state: dict[str, Any]
@@ -322,6 +326,59 @@ def logout(request: Request, response: Response, db: DBSession = Depends(get_db)
 @app.get("/api/auth/me")
 def whoami(user: User | None = Depends(get_current_user)):
     return {"user": _public_user(user) if user else None}
+
+
+@app.get("/api/me/export")
+def export_account_data(
+    response: Response,
+    user: User = Depends(require_user),
+    db: DBSession = Depends(get_db),
+):
+    """Download the authenticated user's account metadata and saved cloud library."""
+    snapshot = db.get(StateSnapshot, user.id)
+    export_document = {
+        "format": "omnishelf-account-export",
+        "version": 1,
+        "exported_at": _iso(datetime.now(timezone.utc)),
+        "account": _public_user(user),
+        "cloud_library": {
+            "exists": snapshot is not None,
+            "revision": snapshot.revision if snapshot else 0,
+            "updated_at": _iso(snapshot.updated_at) if snapshot else None,
+            "state": snapshot.state_json if snapshot else None,
+        },
+    }
+    response.headers["Content-Disposition"] = 'attachment; filename="omnishelf-account-export.json"'
+    response.headers["Cache-Control"] = "no-store"
+    return export_document
+
+
+@app.delete("/api/me/account", status_code=204)
+def delete_account(
+    payload: DeleteAccountBody,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_user),
+    db: DBSession = Depends(get_db),
+):
+    """Delete the current account, cloud snapshot and every server-side session."""
+    _verify_origin(request)
+    try:
+        valid_password = password_hasher.verify(user.password_hash, payload.password)
+    except (VerifyMismatchError, VerificationError, ValueError):
+        valid_password = False
+    if not valid_password:
+        raise HTTPException(status_code=403, detail="Password confirmation failed.")
+
+    # Explicit child deletion also works in SQLite tests where FK enforcement may be off.
+    db.query(StateSnapshot).filter(StateSnapshot.user_id == user.id).delete(synchronize_session=False)
+    db.query(LoginSession).filter(LoginSession.user_id == user.id).delete(synchronize_session=False)
+    db.delete(user)
+    db.commit()
+    response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, secure=COOKIE_SECURE, samesite="lax")
+    response.status_code = 204
+    return response
+
 
 @app.get("/api/me/state/meta")
 def state_meta(user: User = Depends(require_user), db: DBSession = Depends(get_db)):

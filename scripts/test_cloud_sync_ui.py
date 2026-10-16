@@ -29,6 +29,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
 class MockCloudAPI:
     def __init__(self) -> None:
         self.authenticated = False
+        self.account_exists = True
         self.revision = 0
         self.snapshot_state: dict | None = None
         self.user = {
@@ -55,13 +56,47 @@ class MockCloudAPI:
         self.requests.append((method, path))
 
         if path == "/api/auth/me" and method == "GET":
-            self.respond(route, {"user": self.user if self.authenticated else None})
+            self.respond(route, {"user": self.user if self.authenticated and self.account_exists else None})
+            return
+
+        if path == "/api/me/export" and method == "GET":
+            if not self.authenticated or not self.account_exists:
+                self.respond(route, {"detail": "Sign in to export account data."}, 401)
+                return
+            self.respond(route, {
+                "format": "omnishelf-account-export",
+                "version": 1,
+                "exported_at": "2026-10-16T00:00:00Z",
+                "account": self.user,
+                "cloud_library": {
+                    "exists": self.snapshot_state is not None,
+                    "revision": self.revision,
+                    "updated_at": "2026-10-16T00:00:00Z" if self.snapshot_state is not None else None,
+                    "state": copy.deepcopy(self.snapshot_state),
+                },
+            })
+            return
+
+        if path == "/api/me/account" and method == "DELETE":
+            if not self.authenticated or not self.account_exists:
+                self.respond(route, {"detail": "Sign in to delete your account."}, 401)
+                return
+            payload = request.post_data_json or {}
+            if payload.get("password") != FIXTURE_PASSWORD:
+                self.respond(route, {"detail": "Password confirmation failed."}, 403)
+                return
+            self.account_exists = False
+            self.authenticated = False
+            self.revision = 0
+            self.snapshot_state = None
+            route.fulfill(status=204, body="")
             return
 
         if path == "/api/auth/login" and method == "POST":
             payload = request.post_data_json or {}
             if (
-                payload.get("identifier", "").strip().lower() == self.user["username"]
+                self.account_exists
+                and payload.get("identifier", "").strip().lower() == self.user["username"]
                 and payload.get("password") == FIXTURE_PASSWORD
             ):
                 self.authenticated = True
@@ -76,7 +111,7 @@ class MockCloudAPI:
             return
 
         if path.startswith("/api/me/state"):
-            if not self.authenticated:
+            if not self.authenticated or not self.account_exists:
                 self.respond(route, {"detail": "Sign in to access your cloud library."}, 401)
                 return
 
@@ -187,7 +222,13 @@ def main() -> None:
             page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.8-cloud-sync-connected.png"), full_page=True)
 
             dialogs = []
-            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+            def handle_dialog(dialog):
+                dialogs.append((dialog.type, dialog.message))
+                if dialog.type == "prompt":
+                    dialog.accept(FIXTURE_PASSWORD)
+                else:
+                    dialog.accept()
+            page.on("dialog", handle_dialog)
             page.locator("#cloudUploadBtn").click()
             page.get_by_text("Cloud snapshot saved as revision 1.", exact=True).wait_for(timeout=10000)
             assert api.revision == 1, f"Expected first upload to create revision 1, got {api.revision}"
@@ -241,13 +282,41 @@ def main() -> None:
                 "Signing out must not delete the browser's local library."
             )
             assert not api.authenticated, "Mock API should revoke its signed-in session on logout."
+
+            # Export must download a JSON file containing account and cloud state without secrets.
+            page.locator("#cloudIdentifier").fill("test-reader")
+            page.locator("#cloudPassword").fill(FIXTURE_PASSWORD)
+            page.locator("#cloudAuthSubmit").click()
+            page.get_by_text("@test-reader", exact=True).wait_for(timeout=10000)
+            with page.expect_download(timeout=10000) as download_info:
+                page.locator("#cloudExportBtn").click()
+            download = download_info.value
+            assert download.suggested_filename == "omnishelf-account-export.json"
+            exported = json.loads(Path(download.path()).read_text(encoding="utf-8"))
+            assert exported["format"] == "omnishelf-account-export"
+            assert exported["account"]["username"] == "test-reader"
+            assert any(work.get("title") == RESTORED_TITLE for work in exported["cloud_library"]["state"]["works"])
+            assert "password_hash" not in json.dumps(exported)
+            assert any(method == "GET" and path == "/api/me/export" for method, path in api.requests)
+
+            # Deletion requires an explicit confirmation and password; local browser data stays.
+            page.locator("#cloudDeleteAccountBtn").click()
+            page.get_by_text("Your account and cloud data were permanently deleted. Your local browser data remains available.", exact=True).wait_for(timeout=10000)
+            after_delete = read_saved_state(page)
+            assert after_delete and any(work.get("title") == RESTORED_TITLE for work in after_delete.get("works", [])), (
+                "Account deletion must not erase local browser data."
+            )
+            assert api.account_exists is False and api.authenticated is False
+            assert api.snapshot_state is None and api.revision == 0
+            assert any(method == "DELETE" and path == "/api/me/account" for method, path in api.requests)
+
             assert not any(method == "POST" and path == "/api/auth/register" for method, path in api.requests), (
                 "The browser acceptance test must not attempt public registration."
             )
             assert not page_errors, f"Browser raised uncaught JavaScript errors: {page_errors}"
-            assert dialogs, "Upload and restore confirmations should be shown before overwriting data."
-            print("Cloud-sync UI passed: login, first upload, stale-revision warning, restore, and local-data retention after sign-out.")
-            print(f"Observed mocked API calls: {len(api.requests)}; confirmation dialogs: {len(dialogs)}")
+            assert any(kind == "prompt" for kind, _ in dialogs), "Account deletion should request password confirmation."
+            print("Cloud-sync UI passed: login, upload, stale-write rejection, restore, export download, account deletion, and local-data retention.")
+            print(f"Observed mocked API calls: {len(api.requests)}; dialogs: {len(dialogs)}")
             browser.close()
             browser = None
     finally:

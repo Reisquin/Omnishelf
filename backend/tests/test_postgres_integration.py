@@ -300,3 +300,42 @@ def test_postgres_https_login_works_while_registration_is_closed(
             "updated_at": None,
             "state": None,
         }
+
+
+def test_postgres_account_export_and_deletion_revoke_all_sessions(postgres_client: TestClient) -> None:
+    register(postgres_client, "pg_delete_reader", "pg-delete-reader@example.com")
+    saved = postgres_client.put(
+        "/api/me/state",
+        headers=ORIGIN,
+        json=state_payload("Delete-account PostgreSQL fixture", 0),
+    )
+    assert saved.status_code == 200
+
+    with TestClient(main.app, base_url="http://testserver") as second_session:
+        signed_in = second_session.post(
+            "/api/auth/login",
+            headers=ORIGIN,
+            json={
+                "identifier": "pg_delete_reader",
+                "password": "integration-test-password-123",
+            },
+        )
+        assert signed_in.status_code == 200
+
+        exported = postgres_client.get("/api/me/export")
+        assert exported.status_code == 200
+        assert exported.json()["cloud_library"]["state"]["works"][0]["title"] == "Delete-account PostgreSQL fixture"
+        assert "password_hash" not in str(exported.json())
+        assert "token_hash" not in str(exported.json())
+
+        deleted = postgres_client.request(
+            "DELETE",
+            "/api/me/account",
+            headers=ORIGIN,
+            json={"password": "integration-test-password-123"},
+        )
+        assert deleted.status_code == 204
+        assert postgres_client.get("/api/auth/me").json()["user"] is None
+        assert postgres_client.get("/api/me/state").status_code == 401
+        assert second_session.get("/api/auth/me").json()["user"] is None
+        assert second_session.get("/api/me/state").status_code == 401
