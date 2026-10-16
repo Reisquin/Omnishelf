@@ -445,7 +445,7 @@ class StagingAcceptancePrepareBody(BaseModel):
 
 def _cleanup_staging_workflow_users(db: DBSession, run_id: str, slot: str | None = None) -> int:
     username_pattern = re.compile(rf"^e2e_{re.escape(run_id)}_[0-9]+_[ps]$")
-    email_pattern = re.compile(rf"^e2e-{re.escape(run_id)}-[0-9]+-[ps]@example\\.invalid$")
+    email_pattern = re.compile(rf"^e2e-{re.escape(run_id)}-[0-9]+-[ps]@example\.invalid$")
     candidates = db.scalars(
         select(User).where(User.username.like(f"e2e!_{run_id}!_%", escape="!"))
     ).all()
