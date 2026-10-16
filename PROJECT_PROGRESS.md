@@ -220,3 +220,18 @@ Date: 2026-10-16
 - Fresh build screenshots are in the workflow artifact omnishelf-1.3.8-layout-previews (artifact ID 12028942100; available through 2026-10-30): desktop, mobile, and the connected account/cloud-sync panel.
 - This is frontend regression coverage, not proof of authenticated hosted persistence. The remaining hosted Render + Neon authenticated acceptance test, backup/restore drill, account recovery features, rate-limit hardening, security review, and licensing review remain open. Keep registration disabled.
 
+## Completed work step — isolated hosted authentication staging lane
+
+Date: 2026-10-16
+
+- Added a separate Neon branch, auth-staging-2026-10-16 (br-tiny-moon-ao9v8tny), and a separate Render Free service, https://omnishelf-1-3-8-auth-staging.onrender.com (service ID srv-db8s513bc2fs73c0a9v0).
+- The staging service points only to its isolated database branch. HTTPS-only cookies stay enabled and public registration remains disabled; the primary Neon branch and original 1.0.0 service are untouched.
+- Read-only verification of the staging database returned zero users, zero sessions, zero snapshots, and migration 001_initial_backend present.
+- Staging smoke workflow run 38860955820 passed, including live Postgres health, security headers, anonymous-state denial, closed registration, desktop/mobile browser rendering, and screenshot generation. The same run passed the existing full preview smoke job.
+- Fresh screenshots: artifact omnishelf-1.3.8-auth-staging-previews, ID 12028079809, available until 2026-10-30. Desktop and mobile PNGs were downloaded to the working session.
+- Remaining gate: authenticated HTTP E2E against this new staging URL. That run must create an ephemeral random-password account only in the staging branch, verify Secure/HttpOnly/SameSite cookies, persist and restore a snapshot across login/logout, confirm 409 stale-write protection and two-account isolation, and clean up only its own rows. Do not open registration or commit credentials to the public repo. No staging test accounts were seeded in this step.
+
+### Current next action
+
+Implement and run a controlled, self-cleaning authenticated acceptance runner for the isolated staging service. Keep the task explicitly marked pending until that runner reports a successful authenticated end-to-end result. Afterward, the next production-readiness work remains backup/restore verification, account verification/recovery/deletion/export, shared rate limiting, independent security review, and data-source/licensing review.
+
