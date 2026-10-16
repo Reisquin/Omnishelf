@@ -12,7 +12,7 @@
 
 ## Verified live acceptance
 
-The live smoke workflow passed: https://github.com/Reisquin/Omnishelf/actions/runs/38826841911
+Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omnishelf/actions/runs/38851867077. PostgreSQL integration CI also passed against a separate disposable PostgreSQL 16 instance: https://github.com/Reisquin/Omnishelf/actions/runs/38851867171.
 
 - `GET /healthz`: HTTP 200, database `ok`, app version `1.3.8`.
 - Neon reports schema migration `001_initial_backend`; tables `users`, `sessions`, `state_snapshots`, and `alembic_version` exist.
@@ -24,8 +24,8 @@ The live smoke workflow passed: https://github.com/Reisquin/Omnishelf/actions/ru
 
 ## Remaining gaps
 
-- Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. The API-level cookie tests pass in CI.
-- Live snapshot round-trip, sign-out/sign-in persistence, stale-revision (409), two-account isolation, and PostgreSQL first-write concurrency checks remain pending. Public registration stays disabled; do not expose a registration window just to test these.
+- Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. API-level cookie tests pass in CI.
+- Stale-revision (409) rejection, PostgreSQL concurrent first writes, sign-out/sign-in snapshot persistence, and per-account isolation now pass automated tests against a disposable PostgreSQL 16 CI database. Running those same authenticated scenarios against the hosted Render + Neon pair remains pending. Public registration stays disabled; do not expose a registration window just to test these.
 - The Render API used to create the service did not expose its native health-check-path setting. The deployed smoke workflow explicitly checks `/healthz`; `render.free.yaml` declares `healthCheckPath: /healthz` for Blueprint-based recreation.
 - No backup/restore drill or independent security review has been completed. Do not consider the site production-ready yet.
 
