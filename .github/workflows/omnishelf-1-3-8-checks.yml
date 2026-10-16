@@ -59,7 +59,14 @@ jobs:
           assert "EXPOSE 10000" in dockerfile, "Docker image must expose Render's default HTTP port 10000"
           assert "--host 0.0.0.0" in dockerfile, "Web server must bind to all interfaces"
           assert "--port ${PORT:-10000}" in dockerfile, "Web server port must default to 10000 and honor Render PORT"
-          print("Free blueprint and Render Docker port binding are valid.")
+          backend = Path("backend/main.py").read_text()
+          assert "OMNISHELF_STAGING_ACCEPTANCE_ENABLED" in backend
+          assert "if STAGING_ACCEPTANCE_ENABLED:" in backend, "Staging hooks must be mounted conditionally"
+          assert 'STAGING_ACCEPTANCE_AUDIENCE = "omnishelf-auth-staging"' in backend
+          assert "STAGING_ACCEPTANCE_WORKFLOW_REF" in backend
+          assert "token.actions.githubusercontent.com/.well-known/jwks" in backend
+          assert "OMNISHELF_STAGING_ACCEPTANCE_ENABLED" not in env, "Staging test routes must not be enabled by the normal free blueprint"
+          print("Free blueprint, Docker port, and staging-only OIDC guard are valid.")
           PY
   backend-tests:
     runs-on: ubuntu-latest
