@@ -208,3 +208,15 @@ Date: 2026-10-16
 
 - **Verification outcome:** CI run `38856765191` passed all five jobs, including PostgreSQL production-mode authentication with registration disabled. Live smoke run `38856765111` also passed and captured fresh desktop/mobile screenshots after the port fix. Artifact ID `12027606745` remains available until 2026-10-30.
 - **Hosted data remains untouched:** read-only Neon counts after the run were `users=0`, `sessions=0`, and `state_snapshots=0`; only the `alembic_version` marker remains.
+
+## Completed work step — browser-level cloud-sync UI acceptance
+
+Date: 2026-10-16
+
+- Added a Playwright acceptance script for the account/cloud-sync interface and wired it into the build-preview workflow.
+- The browser test signs in to a local mocked account, completes the first-upload flow, simulates a competing remote save and verifies the stale upload is blocked, restores the newer cloud copy, then signs out and verifies local data remains persisted in the browser.
+- The test uses a local mocked API only. It neither connects to hosted services nor creates or changes any hosted account/library data.
+- Verified: GitHub Actions run 38860148427 passed all five jobs, including PostgreSQL integration tests and the new cloud-sync browser journey.
+- Fresh build screenshots are in the workflow artifact omnishelf-1.3.8-layout-previews (artifact ID 12028942100; available through 2026-10-30): desktop, mobile, and the connected account/cloud-sync panel.
+- This is frontend regression coverage, not proof of authenticated hosted persistence. The remaining hosted Render + Neon authenticated acceptance test, backup/restore drill, account recovery features, rate-limit hardening, security review, and licensing review remain open. Keep registration disabled.
+
