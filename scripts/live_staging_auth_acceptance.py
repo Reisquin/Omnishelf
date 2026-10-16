@@ -238,6 +238,57 @@ def main() -> None:
         assert secondary_private["revision"] == 1
         assert secondary_private["state"]["works"][0]["title"] == "Secondary account private library"
 
+        # Export contains the complete account/library payload but no password or session secrets.
+        exported = secondary_again.get(BASE_URL + "/api/me/export", timeout=30)
+        assert exported.status_code == 200, f"Account export failed: HTTP {exported.status_code}, {exported.text[:250]}"
+        assert "attachment" in exported.headers.get("content-disposition", "").lower()
+        assert exported.headers.get("cache-control") == "no-store"
+        export_document = exported.json()
+        assert export_document["format"] == "omnishelf-account-export"
+        assert export_document["version"] == 1
+        assert export_document["account"]["username"] == secondary_name
+        assert export_document["cloud_library"]["revision"] == 1
+        assert export_document["cloud_library"]["state"]["works"][0]["title"] == "Secondary account private library"
+        encoded_export = json.dumps(export_document).lower()
+        assert "password_hash" not in encoded_export and "token_hash" not in encoded_export
+        assert "sessions" not in export_document
+
+        # Deletion is password-confirmed, removes cloud state, and revokes all sessions.
+        secondary_second_session = login(secondary_name, passwords["s"])
+        wrong_delete = secondary_again.delete(
+            BASE_URL + "/api/me/account",
+            headers={"Origin": ORIGIN},
+            json={"password": "incorrect-staging-password-for-test"},
+            timeout=30,
+        )
+        assert wrong_delete.status_code == 403, f"Wrong-password delete should be denied, got {wrong_delete.status_code}"
+        still_authenticated = secondary_again.get(BASE_URL + "/api/auth/me", timeout=30)
+        assert still_authenticated.status_code == 200 and still_authenticated.json()["user"]["username"] == secondary_name
+        still_saved = secondary_again.get(BASE_URL + "/api/me/state", timeout=30).json()
+        assert still_saved["state"]["works"][0]["title"] == "Secondary account private library"
+
+        delete_response = secondary_again.delete(
+            BASE_URL + "/api/me/account",
+            headers={"Origin": ORIGIN},
+            json={"password": passwords["s"]},
+            timeout=30,
+        )
+        assert delete_response.status_code == 204, (
+            f"Password-confirmed account deletion failed: HTTP {delete_response.status_code}, {delete_response.text[:250]}"
+        )
+        assert "max-age=0" in delete_response.headers.get("set-cookie", "").lower()
+        assert secondary_again.get(BASE_URL + "/api/auth/me", timeout=30).json().get("user") is None
+        assert secondary_again.get(BASE_URL + "/api/me/state", timeout=30).status_code == 401
+        assert secondary_second_session.get(BASE_URL + "/api/auth/me", timeout=30).json().get("user") is None
+        assert secondary_second_session.get(BASE_URL + "/api/me/state", timeout=30).status_code == 401
+        assert secondary_again.get(BASE_URL + "/api/me/export", timeout=30).status_code == 401
+
+        # Deleting account two must not affect account one's data.
+        primary_final = login(primary_name, passwords["p"])
+        primary_final_state = primary_final.get(BASE_URL + "/api/me/state", timeout=30)
+        assert primary_final_state.status_code == 200
+        assert primary_final_state.json()["state"]["works"][0]["title"] == committed_title
+
         # Ordinary public registration must still be closed during this authenticated test.
         register = requests.post(
             BASE_URL + "/api/auth/register",
@@ -262,6 +313,10 @@ def main() -> None:
                 "logout revokes session",
                 "cloud snapshot persists across fresh sign-in",
                 "two-account snapshot isolation",
+                "account export excludes password/session secrets",
+                "wrong-password account deletion is denied",
+                "password-confirmed account deletion revokes every session",
+                "deleting account two does not affect account one's library",
             ],
             "temporary_accounts_created": 2,
             "credentials_logged": False,
