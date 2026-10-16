@@ -195,3 +195,13 @@ Date: 2026-10-16
 - Fresh full-page deployed UI screenshots captured after deployment: `OmniShelf_1.3.8_Post_Deploy_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Post_Deploy_Live_Mobile_Preview.png` (retained in GitHub artifact `omnishelf-1.3.8-live-acceptance`, artifact ID `12026513359`, until 2026-10-30).
 - The temporary QA route stays removed, its Render token remains empty, public registration stays disabled, and the Neon tables `users`, `sessions`, and `state_snapshots` were verified empty after cleanup.
 - Still pending: full authenticated hosted test (secure cookie, cloud save/read across sign-out/sign-in, stale revision, concurrent first save, two-account isolation). Database/session variants pass against disposable PostgreSQL in CI; the hosted authenticated flow has not yet been proven. Keep registration closed. Also pending before public launch: email recovery/verification/deletion/export, shared rate limiting, backup/restore drill, security review, licensing review.
+
+
+## Completed work step — production-mode PostgreSQL authentication coverage
+
+Date: 2026-10-16
+
+- Added `test_postgres_https_login_works_while_registration_is_closed` to the disposable PostgreSQL integration suite.
+- This test provisions accounts only through the fixture's temporary registration-enabled mode in GitHub Actions, then switches registration off and Secure cookies on before exercising actual FastAPI HTTP routes over HTTPS TestClient.
+- It verifies Secure/HttpOnly/SameSite=Lax cookies, HSTS, `Cache-Control: no-store`, allowed sign-in while registration is disabled, snapshot save/read, stale-revision 409 without overwriting, logout/session revocation, restore after sign-in, and another existing account's empty library.
+- No hosted Neon rows or public registration settings were modified. This improves production-mode confidence but does not substitute for the still-pending end-to-end test against the hosted Render + Neon service.

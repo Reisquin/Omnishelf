@@ -195,3 +195,108 @@ def test_postgres_session_and_snapshot_persist_after_relogin_and_are_account_sco
                 "updated_at": None,
                 "state": None,
             }
+
+
+
+def test_postgres_https_login_works_while_registration_is_closed(
+    postgres_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the production auth mode over HTTP routes without opening live sign-up."""
+    existing_password = "integration-test-password-123"
+    other_password = "integration-test-password-123"
+
+    # Seed only the disposable CI database while the fixture's test registration path is open.
+    register(postgres_client, "pg_secure_existing", "pg-secure-existing@example.com")
+    with TestClient(main.app, base_url="http://testserver") as setup_other_client:
+        register(setup_other_client, "pg_secure_other", "pg-secure-other@example.com")
+
+    # Production mode: users can sign in, but new public account creation is closed.
+    monkeypatch.setattr(main, "REGISTRATION_ENABLED", False)
+    monkeypatch.setattr(main, "COOKIE_SECURE", True)
+    https_origin = {"Origin": "https://testserver"}
+
+    with TestClient(main.app, base_url="https://testserver") as secure_client:
+        blocked_registration = secure_client.post(
+            "/api/auth/register",
+            headers=https_origin,
+            json={
+                "username": "pg_must_stay_closed",
+                "email": "pg-must-stay-closed@example.com",
+                "password": existing_password,
+            },
+        )
+        assert blocked_registration.status_code == 403, blocked_registration.text
+
+        login = secure_client.post(
+            "/api/auth/login",
+            headers=https_origin,
+            json={"identifier": "pg_secure_existing", "password": existing_password},
+        )
+        assert login.status_code == 200, login.text
+        cookie = login.headers.get("set-cookie", "").lower()
+        assert "secure" in cookie
+        assert "httponly" in cookie
+        assert "samesite=lax" in cookie
+        assert login.headers.get("cache-control") == "no-store"
+        assert login.headers.get("strict-transport-security", "").startswith("max-age=")
+        assert secure_client.get("/api/auth/me").json()["user"]["username"] == "pg_secure_existing"
+
+        saved = secure_client.put(
+            "/api/me/state",
+            headers=https_origin,
+            json=state_payload("HTTPS production-mode library", 0),
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["revision"] == 1
+
+        read = secure_client.get("/api/me/state")
+        assert read.status_code == 200
+        assert read.headers.get("cache-control") == "no-store"
+        assert read.headers.get("etag") == '"1"'
+        assert read.json()["state"]["works"][0]["title"] == "HTTPS production-mode library"
+
+        stale = secure_client.put(
+            "/api/me/state",
+            headers=https_origin,
+            json=state_payload("Stale write must not win", 0),
+        )
+        assert stale.status_code == 409, stale.text
+        assert secure_client.get("/api/me/state").json()["state"]["works"][0]["title"] == "HTTPS production-mode library"
+
+        logout = secure_client.post("/api/auth/logout", headers=https_origin)
+        assert logout.status_code == 204
+        assert secure_client.get("/api/auth/me").json()["user"] is None
+        no_session = secure_client.get("/api/me/state")
+        assert no_session.status_code == 401
+        assert no_session.headers.get("cache-control") == "no-store"
+
+    # A new secure session restores the same PostgreSQL snapshot after sign-out/sign-in.
+    with TestClient(main.app, base_url="https://testserver") as relogin_client:
+        login = relogin_client.post(
+            "/api/auth/login",
+            headers=https_origin,
+            json={"identifier": "pg_secure_existing", "password": existing_password},
+        )
+        assert login.status_code == 200, login.text
+        restored = relogin_client.get("/api/me/state")
+        assert restored.status_code == 200
+        assert restored.json()["revision"] == 1
+        assert restored.json()["state"]["works"][0]["title"] == "HTTPS production-mode library"
+
+    # A second existing account still sees no snapshot belonging to the first account.
+    with TestClient(main.app, base_url="https://testserver") as other_client:
+        login = other_client.post(
+            "/api/auth/login",
+            headers=https_origin,
+            json={"identifier": "pg_secure_other", "password": other_password},
+        )
+        assert login.status_code == 200, login.text
+        other_state = other_client.get("/api/me/state")
+        assert other_state.status_code == 200
+        assert other_state.json() == {
+            "exists": False,
+            "revision": 0,
+            "updated_at": None,
+            "state": None,
+        }
