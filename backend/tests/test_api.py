@@ -141,21 +141,22 @@ def test_login_rejects_untrusted_or_missing_origin(client: TestClient) -> None:
 
 def test_auth_rate_limits_are_shared_between_clients_and_expire(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(main._RATE_LIMITS, "login", (2, 900))
+    monkeypatch.setattr(main, "RENDER_ENVIRONMENT", True)
     second_client = TestClient(main.app, base_url="http://testserver")
     try:
         first = client.post(
             "/api/auth/login",
-            headers=ORIGIN,
+            headers={**ORIGIN, "X-Forwarded-For": "203.0.113.44, 198.51.100.10"},
             json={"identifier": "unknown-reader", "password": "wrong-password"},
         )
         second = second_client.post(
             "/api/auth/login",
-            headers=ORIGIN,
+            headers={**ORIGIN, "X-Forwarded-For": "203.0.113.44, 198.51.100.10"},
             json={"identifier": "unknown-reader", "password": "wrong-password"},
         )
         blocked = client.post(
             "/api/auth/login",
-            headers=ORIGIN,
+            headers={**ORIGIN, "X-Forwarded-For": "203.0.113.44, 198.51.100.10"},
             json={"identifier": "unknown-reader", "password": "wrong-password"},
         )
         assert first.status_code == 401
@@ -178,7 +179,7 @@ def test_auth_rate_limits_are_shared_between_clients_and_expire(client: TestClie
 
         after_window = second_client.post(
             "/api/auth/login",
-            headers=ORIGIN,
+            headers={**ORIGIN, "X-Forwarded-For": "203.0.113.44, 198.51.100.10"},
             json={"identifier": "unknown-reader", "password": "wrong-password"},
         )
         assert after_window.status_code == 401

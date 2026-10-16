@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -41,6 +42,7 @@ MAX_STATE_BYTES = max(1024 * 1024, int(os.getenv("MAX_STATE_BYTES", str(20 * 102
 MAX_WORKS = 50_000
 MAX_RECORDS = 100_000
 PUBLIC_APP_ORIGIN = os.getenv("PUBLIC_APP_ORIGIN", "").strip().rstrip("/")
+RENDER_ENVIRONMENT = os.getenv("RENDER", "").strip().lower() == "true"
 FRONTEND_ORIGINS = {x.strip().rstrip("/") for x in os.getenv("FRONTEND_ORIGIN", "").split(",") if x.strip()}
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'omnishelf-dev.db'}")
@@ -198,9 +200,23 @@ class CloudStateBody(BaseModel):
 _RATE_LIMITS = {"register": (5, 3600), "login": (10, 900)}
 _RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", DATABASE_URL).encode("utf-8")
 
+def _rate_limit_client_host(request: Request) -> str:
+    # Render's edge sets the real client address as the first X-Forwarded-For entry.
+    # Only trust this provider-specific behavior when Render explicitly marks the runtime.
+    # For local/self-hosted deployments, caller-supplied forwarding headers are ignored.
+    if RENDER_ENVIRONMENT:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        candidate = forwarded.split(",", 1)[0].strip()
+        if candidate:
+            try:
+                return str(ipaddress.ip_address(candidate))
+            except ValueError:
+                pass
+    return request.client.host if request.client else "unknown"
+
 def _rate_limit(request: Request, action: str, db: DBSession) -> None:
     limit, window = _RATE_LIMITS[action]
-    remote_host = request.client.host if request.client else "unknown"
+    remote_host = _rate_limit_client_host(request)
     client_key = hmac.new(_RATE_LIMIT_HASH_KEY, remote_host.encode("utf-8"), hashlib.sha256).hexdigest()
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=window)
