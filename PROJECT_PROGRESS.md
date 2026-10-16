@@ -273,3 +273,14 @@ Date: 2026-10-16
 - Fresh screenshots: artifact omnishelf-1.3.8-auth-staging-previews (ID 12031282360), omnishelf-1.3.8-live-acceptance (ID 12030914679), and omnishelf-1.3.8-layout-previews (ID 12031442078), available through 2026-10-30.
 - Remaining pre-launch blockers: email verification, password recovery, shared rate limiting/abuse controls, recurring backups/retention (Neon schedule creation is disabled for this project), independent security review, and provider/licensing review. Registration remains disabled.
 
+## Completed work step — shared authentication rate limiting
+
+Date: 2026-10-16
+
+- Replaced the process-local rate limiter with an atomic, database-backed fixed-window counter shared across application workers and instances.
+- Limits: 5 registration attempts per client address per hour; 10 login attempts per client address per 15 minutes. The endpoint returns 429 and Retry-After when exceeded; the counter is capped at limit+1 and old records are opportunistically purged.
+- Raw IP addresses are not stored: the limiter stores an HMAC. The stable hash key is configured by RATE_LIMIT_HASH_KEY, with shared DATABASE_URL as the fallback so workers attached to the same database agree. In Render's hosted environment, the client IP resolver uses the first platform-provided X-Forwarded-For entry; local runs ignore forwarded headers.
+- New Alembic migration: 002_shared_auth_rate_limits. API tests cover shared counters and expired-window reset; PostgreSQL integration sends 8 simultaneous attempts across separate clients and confirms 3 reach credential verification while 5 receive 429.
+- All five jobs passed in CI run 38870722468. Source commit 2eecb50ef2868f2e9c17dfc4f294953a70bf4ccf is deployed to the isolated 1.3.8 staging and preview services. Post-deployment live acceptance is being rerun because the first smoke job began before deployment completion.
+- This closes the shared IP-based login/registration throttle baseline; additional abuse controls still remain. Public registration remains disabled.
+

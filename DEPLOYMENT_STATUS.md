@@ -56,7 +56,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 
 ## Before public launch
 
-Email verification, password recovery, shared rate-limiting/abuse controls, an enabled production backup schedule/retention policy, independent security review, and provider/licensing review remain required. Data export and password-confirmed account deletion are implemented and tested. The backup/restore drill passed, but automated snapshots are not enabled for this Neon project. Keep public registration disabled until the remaining controls are complete.
+Email verification, password recovery, additional abuse controls beyond shared IP-based login/registration throttles, an enabled production backup schedule/retention policy, independent security review, and provider/licensing review remain required. Data export and password-confirmed account deletion are implemented and tested. The backup/restore drill passed, but automated snapshots are not enabled for this Neon project. Keep public registration disabled until the remaining controls are complete.
 
 
 ## Authenticated flow coverage — production-mode PostgreSQL test
@@ -126,4 +126,15 @@ Date: 2026-10-16
 - Both hosted deployments now run commit bb61134d992ec895c1f98c441f4b8286dbde7ea7: the staging deployment is dep-db8t0davcj2c73b45t10 and the separate 1.3.8 preview deployment is dep-db8t0ejl550s73f3i9d0. The original 1.0.0 service and main source branch remain untouched.
 - Post-test read-only checks confirmed both primary and staging branches have zero users, sessions, and snapshots. Public registration remains disabled.
 - Fresh previews are in workflow artifacts omnishelf-1.3.8-auth-staging-previews (ID 12031282360), omnishelf-1.3.8-live-acceptance (ID 12030914679), and omnishelf-1.3.8-layout-previews (ID 12031442078), retained through 2026-10-30.
+
+## Shared authentication rate limiting — 2026-10-16
+
+- Replaced the process-local login/registration counters with the versioned auth_rate_limits PostgreSQL table. Atomic INSERT .. ON CONFLICT DO UPDATE enforces fixed windows across workers/instances; SQLite uses the corresponding atomic upsert for isolated tests.
+- Default limits remain 5 registrations per client IP per hour and 10 login attempts per client IP per 15 minutes. Blocked attempts return HTTP 429 with Retry-After; counters cap at limit+1, and expired keys are opportunistically pruned.
+- Client addresses are HMACed before storage (no raw IP address is stored). RATE_LIMIT_HASH_KEY can explicitly set the stable key; absent that, the shared DATABASE_URL is used so all instances connected to that database compute the same hash. When RENDER=true, the app reads the first platform-provided X-Forwarded-For entry; local/self-hosted requests do not trust caller-supplied forwarding headers.
+- Failure to reach the shared rate-limit table fails closed with HTTP 503 rather than silently disabling protection.
+- Added Alembic migration 002_shared_auth_rate_limits; the staging deployment reports that revision and the table exists.
+- CI run 38870722468 passed all five jobs, including cross-client window expiry and a concurrent PostgreSQL test where 8 simultaneous login attempts produced exactly 3 allowed failures and 5 HTTP 429 responses.
+- The related live smoke workflow 38870722459 also passed, though its hosted checks started just before the manual deployment finished. Rerun hosted acceptance after deployment and rely on that post-deploy run as the authoritative live validation.
+- Source commit 2eecb50ef2868f2e9c17dfc4f294953a70bf4ccf is live in the isolated staging and preview services. The main release service remains untouched. Public registration stays disabled.
 
