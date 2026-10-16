@@ -55,7 +55,11 @@ jobs:
           assert env["DATABASE_URL"].get("sync") is False, "Database URL must be a dashboard-only secret"
           assert env["REGISTRATION_ENABLED"].get("value") == "false", "Public registration must stay disabled"
           assert env["COOKIE_SECURE"].get("value") == "true", "HTTPS-only cookies must stay enabled"
-          print("Free blueprint valid: one free web service, no Render database, secret URL, registration disabled.")
+          dockerfile = Path("Dockerfile").read_text()
+          assert "EXPOSE 10000" in dockerfile, "Docker image must expose Render's default HTTP port 10000"
+          assert "--host 0.0.0.0" in dockerfile, "Web server must bind to all interfaces"
+          assert "--port ${PORT:-10000}" in dockerfile, "Web server port must default to 10000 and honor Render PORT"
+          print("Free blueprint and Render Docker port binding are valid.")
           PY
   backend-tests:
     runs-on: ubuntu-latest

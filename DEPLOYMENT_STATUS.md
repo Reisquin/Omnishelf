@@ -10,6 +10,13 @@
 - The existing 1.0.0 Render service and `main` branch remain untouched. The paid `render.yaml` remains an optional upgrade path; it was not used to create the live preview.
 - No paid service/database was intentionally created.
 
+## Deployment correction — Render port binding — 2026-10-16
+
+- Render deploy `dep-db8r1g6i0phs738nckq0` ultimately failed with “Port scan timeout reached, no open ports detected.” Build succeeded, but Render did not mark the cleanup commit live.
+- The runtime log showed Uvicorn listening on port 10000 while the Dockerfile declared `EXPOSE 8000`. Corrected the Dockerfile to `EXPOSE 10000` and default Uvicorn to `PORT` or 10000. This aligns with Render's documented Docker port-binding recommendation: https://render.com/docs/multi-service-architecture.
+- The CI deployment-config job now asserts the exposed port, all-interface binding, and `PORT` fallback match Render's expected configuration.
+- The next automatic deploy must still pass the live smoke workflow and reach Render status `live` before this fix is considered fully verified.
+
 ## Cleanup and rollout note — 2026-10-16
 
 - Cleanup commit `ae896fd010d2194b4f13ebb68a9e4452f9ac4562` removes the temporary preview QA route from `backend/main.py`; the source was re-checked and no temporary route/token code remains.
