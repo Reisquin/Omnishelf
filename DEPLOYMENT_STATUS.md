@@ -15,15 +15,17 @@
 - Render deploy `dep-db8r1g6i0phs738nckq0` ultimately failed with “Port scan timeout reached, no open ports detected.” Build succeeded, but Render did not mark the cleanup commit live.
 - The runtime log showed Uvicorn listening on port 10000 while the Dockerfile declared `EXPOSE 8000`. Corrected the Dockerfile to `EXPOSE 10000` and default Uvicorn to `PORT` or 10000. This aligns with Render's documented Docker port-binding recommendation: https://render.com/docs/multi-service-architecture.
 - The CI deployment-config job now asserts the exposed port, all-interface binding, and `PORT` fallback match Render's expected configuration.
-- The next automatic deploy must still pass the live smoke workflow and reach Render status `live` before this fix is considered fully verified.
+- **Resolved:** deploy `dep-db8rc5cs728c73aq5rp0` for commit `0ece07a50f900190e7e4db7bbc4a87e031ae62b8` reached Render status `live` at 2026-10-16 05:29:40 UTC. Runtime logs confirm Uvicorn listening on `0.0.0.0:10000`.
+- **Post-deploy verification passed:** live smoke run [38855953928, attempt 2](https://github.com/Reisquin/Omnishelf/actions/runs/38855953928) succeeded after the new deployment was marked live. It checked PostgreSQL-backed health, HTTPS security headers, `Cache-Control: no-store`, anonymous cloud-state rejection (HTTP 401), closed registration (HTTP 403), the app shell, and desktop/mobile browser checks.
+- Fresh post-deploy desktop/mobile PNGs are in the `omnishelf-1.3.8-live-acceptance` artifact (artifact ID `12026513359`, retained until 2026-10-30) and were extracted to the working session as `OmniShelf_1.3.8_Post_Deploy_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Post_Deploy_Live_Mobile_Preview.png`.
 
 ## Cleanup and rollout note — 2026-10-16
 
 - Cleanup commit `ae896fd010d2194b4f13ebb68a9e4452f9ac4562` removes the temporary preview QA route from `backend/main.py`; the source was re-checked and no temporary route/token code remains.
 - The temporary Render QA-token environment variable was set to an empty value before route removal and has not been re-enabled.
 - Neon was checked after cleanup: `users`, `sessions`, and `state_snapshots` each contained zero rows; migration `001_initial_backend` remains applied. No test account or library state was left behind.
-- Render deployment `dep-db8r1g6i0phs738nckq0` built successfully, and logs showed a fresh app instance starting, but Render continued reporting `update_in_progress` with no `deploy_ended` event. Treat that rollout as **not conclusively confirmed** until a new live-smoke run verifies the endpoint again.
-- The preceding smoke run `38853912858` succeeded, but began before that cleanup deployment started; it is not evidence that the cleanup commit finished rolling out.
+- Render deployment `dep-db8r1g6i0phs738nckq0` was ultimately marked `update_failed` because the port scan timed out. The exposed-port mismatch is documented and fixed in the subsequent `0ece07a` deployment above.
+- The preceding smoke run `38853912858` did occur before that initial cleanup rollout and is not used as post-deploy evidence. The post-deploy smoke run listed above verifies the corrected deployment.
 - Permanent safeguards are being added to CI to reject reintroduction of the temporary QA hook and to check that anonymous cloud-state reads return HTTP 401 with `Cache-Control: no-store`. This does not replace the still-pending authenticated hosted acceptance tests.
 
 ## Verified live acceptance

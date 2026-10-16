@@ -179,3 +179,19 @@ Date: 2026-10-16
 - Latest live smoke run **38851867077** also succeeded against https://omnishelf-1-3-8-free.onrender.com: PostgreSQL-backed health endpoint, HTTPS security headers, auth response cache policy, registration still disabled (HTTP 403), root shell, no browser exceptions, no mobile horizontal overflow. Run and screenshot artifact: https://github.com/Reisquin/Omnishelf/actions/runs/38851867077
 - Fresh deployed-service full-page screenshots were captured at that run and extracted as `OmniShelf_1.3.8_Latest_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Latest_Live_Mobile_Preview.png` in the current working session.
 - The remaining gap is now specifically authenticated end-to-end testing on the hosted Render + Neon pair. Registration remains disabled; do not open it merely to run tests. Establish a controlled test-account setup first.
+
+
+## Completed work step — Render port-binding fix and post-deploy verification
+
+Date: 2026-10-16
+
+- Investigated the stuck cleanup deployment. Render eventually marked deployment `dep-db8r1g6i0phs738nckq0` failed with “Port scan timeout reached, no open ports detected.” The build had succeeded, but it was not safe to claim the cleanup commit was live.
+- Identified a configuration mismatch: Dockerfile declared `EXPOSE 8000` while Render assigned `PORT=10000` and Uvicorn logs showed it listening on 10000.
+- Corrected `Dockerfile` to `EXPOSE 10000` and `--port ${PORT:-10000}`; added a CI guard for exposed port 10000, binding to `0.0.0.0`, and respecting Render's `PORT`.
+- Fix commit: `0ece07a50f900190e7e4db7bbc4a87e031ae62b8` ([view commit](https://github.com/Reisquin/Omnishelf/commit/0ece07a50f900190e7e4db7bbc4a87e031ae62b8)).
+- Render deployment `dep-db8rc5cs728c73aq5rp0` reached `live` at 2026-10-16 05:29:40 UTC; logs confirm the new instance was listening on `0.0.0.0:10000`.
+- Latest CI run `38855953255` passed all five jobs, including the new port configuration guard: https://github.com/Reisquin/Omnishelf/actions/runs/38855953255.
+- Re-ran live smoke workflow `38855953928` as attempt 2 **after** deployment succeeded; it passed PostgreSQL-backed health, HTTPS/HSTS and `nosniff`, auth cache protection, anonymous cloud-state 401, registration-disabled 403, app root 200, and browser checks. Run: https://github.com/Reisquin/Omnishelf/actions/runs/38855953928.
+- Fresh full-page deployed UI screenshots captured after deployment: `OmniShelf_1.3.8_Post_Deploy_Live_Desktop_Preview.png` and `OmniShelf_1.3.8_Post_Deploy_Live_Mobile_Preview.png` (retained in GitHub artifact `omnishelf-1.3.8-live-acceptance`, artifact ID `12026513359`, until 2026-10-30).
+- The temporary QA route stays removed, its Render token remains empty, public registration stays disabled, and the Neon tables `users`, `sessions`, and `state_snapshots` were verified empty after cleanup.
+- Still pending: full authenticated hosted test (secure cookie, cloud save/read across sign-out/sign-in, stale revision, concurrent first save, two-account isolation). Database/session variants pass against disposable PostgreSQL in CI; the hosted authenticated flow has not yet been proven. Keep registration closed. Also pending before public launch: email recovery/verification/deletion/export, shared rate limiting, backup/restore drill, security review, licensing review.
