@@ -1,43 +1,41 @@
 # OmniShelf 1.3.8 deployment status
 
-## Current public preview
+## Live free-first preview
 
-- Frontend-only HTTPS preview: https://omnishelf-1-3-8-preview.onrender.com
-- The preview is for visual inspection. Accounts and cross-device cloud synchronisation are not yet connected.
-- Latest pre-deployment CI passed on 2026-10-15. The desktop/mobile visual previews remain the latest captured layout checks.
+- **Live URL:** https://omnishelf-1-3-8-free.onrender.com
+- **Render service:** `omnishelf-1-3-8-free`, Free plan, Singapore.
+- **Neon database:** Neon Free project `omnishelf-preview` in Singapore. The pooled connection string is stored in Render's `DATABASE_URL` secret and is not committed to the repository.
+- **Source branch:** `deploy/1.3.8-https-preview`
+- **Registration:** disabled (`REGISTRATION_ENABLED=false`).
+- The existing 1.0.0 Render service and `main` branch remain untouched. The paid `render.yaml` remains an optional upgrade path; it was not used to create the live preview.
+- No paid service/database was intentionally created.
 
-## Free-first cloud preview — prepared, not yet deployed
+## Verified live acceptance
 
-- Repository: https://github.com/Reisquin/Omnishelf
-- Branch: `deploy/1.3.8-https-preview`
-- Free-only Render configuration: [`render.free.yaml`](https://github.com/Reisquin/Omnishelf/blob/deploy/1.3.8-https-preview/render.free.yaml)
-- Step-by-step instructions: [`FREE_DEPLOYMENT_GUIDE.md`](https://github.com/Reisquin/Omnishelf/blob/deploy/1.3.8-https-preview/FREE_DEPLOYMENT_GUIDE.md)
-- Proposed architecture: one Render **Free** Docker web service plus Neon **Free** PostgreSQL. The free blueprint deliberately defines no Render-hosted database.
-- Registration remains `REGISTRATION_ENABLED=false`; Secure cookies remain enabled.
-- The free blueprint asks for `DATABASE_URL` as a Render dashboard secret. A Neon pooled PostgreSQL URI must be created and stored there, not committed to the repository or pasted into chat.
-- CI now validates that the free blueprint has exactly one service, selects plan `free`, creates no Render database, keeps the database URI secret, and leaves registration disabled.
+The live smoke workflow passed: https://github.com/Reisquin/Omnishelf/actions/runs/38826841911
 
-## Billing and safety
+- `GET /healthz`: HTTP 200, database `ok`, app version `1.3.8`.
+- Neon reports schema migration `001_initial_backend`; tables `users`, `sessions`, `state_snapshots`, and `alembic_version` exist.
+- HTTPS HSTS and `X-Content-Type-Options: nosniff` confirmed.
+- `GET /api/auth/me`: HTTP 200, `Cache-Control: no-store`, no signed-in user.
+- `POST /api/auth/register`: HTTP 403, as intended.
+- The app root returns HTTP 200. Live desktop/mobile browser checks passed with no uncaught JavaScript errors and no mobile horizontal overflow.
+- Live desktop/mobile screenshots were captured in the workflow artifact `omnishelf-1.3.8-live-acceptance` (artifact is retained for 14 days).
 
-- No new Render service or database has been created by this free-first preparation. No paid resource has been created.
-- The original paid configuration remains in root `render.yaml` for an optional future upgrade only. Do not use that blueprint for the free-first deployment.
-- The existing `main` branch and 1.0.0 service remain untouched.
-- Render Free web services sleep after 15 minutes idle, may take roughly a minute to wake, and use ephemeral local storage. Therefore, all lasting state must be stored in the external PostgreSQL database. Render's free-tier traffic/build allowances also apply.
-- Render Free PostgreSQL is intentionally not used because Render documents a 30-day expiry and no backups for the Free database plan.
-- Remaining account-bound steps: select/confirm the Render workspace; create a Neon Free project and keep the pooled connection URI secret; create the Render service using `render.free.yaml`; then run the live acceptance checklist.
-- Do not attach paid plans/add-ons or accept a charge prompt. If the service setup unexpectedly asks for payment or a paid plan, stop.
+## Remaining gaps
 
-## Acceptance checks still pending
+- Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. The API-level cookie tests pass in CI.
+- Live snapshot round-trip, sign-out/sign-in persistence, stale-revision (409), two-account isolation, and PostgreSQL first-write concurrency checks remain pending. Public registration stays disabled; do not expose a registration window just to test these.
+- The Render API used to create the service did not expose its native health-check-path setting. The deployed smoke workflow explicitly checks `/healthz`; `render.free.yaml` declares `healthCheckPath: /healthz` for Blueprint-based recreation.
+- No backup/restore drill or independent security review has been completed. Do not consider the site production-ready yet.
 
-- [x] Free-first CI blueprint validation passes (CI run 38825891605).
-- [ ] Deployed `GET /healthz` returns HTTP 200 and database status `ok`.
-- [ ] PostgreSQL Alembic migrations complete.
-- [ ] Secure session-cookie attributes are confirmed over HTTPS.
-- [ ] Registration endpoint continues to return 403.
-- [ ] Snapshot persistence, stale-revision handling, and two-account isolation pass.
-- [ ] Desktop/mobile checks and screenshots are captured from the exact deployed commit.
-- [ ] Free-tier usage is checked; no paid resource is present.
+## Current free-tier constraints
+
+- Render Free web services sleep after 15 minutes idle, use ephemeral local storage, and can take around a minute to wake.
+- Neon's official Free plan currently lists 100 CU-hours, 0.5 GB storage, and 5 GB public network transfer per project per month. Compute scales to zero after five idle minutes. Free quotas suspend compute or prevent writes beyond limits rather than charging monetary overages.
+- Official limits: https://neon.com/docs/introduction/plans
+- Render free-service limits: https://render.com/docs/free
 
 ## Before public launch
 
-Email verification, password recovery, account deletion/export, shared rate-limiting/abuse controls, database backup and restore testing, and independent security plus provider/licensing review remain requirements. Do not enable public registration until these are complete.
+Email verification, password recovery, account deletion/export, shared rate-limiting/abuse controls, backup and restore tests, independent security review, and provider/licensing review are still required. Keep public registration disabled until these are complete.
