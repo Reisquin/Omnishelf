@@ -103,7 +103,9 @@ def test_postgres_rejects_stale_revision_without_overwriting_latest_state(postgr
     )
     assert stale.status_code == 409, stale.text
 
-    latest = postgres_client.get("/api/me/state")
+    latest = postgres_client.get(
+        "/api/me/state", headers={"Cookie": f"{main.COOKIE_NAME}={token}"}
+    )
     assert latest.status_code == 200
     assert latest.json()["revision"] == 1
     assert latest.json()["state"]["works"][0]["title"] == "First committed version"
@@ -114,9 +116,10 @@ def test_postgres_serializes_concurrent_first_snapshot_writes(postgres_client: T
     token = postgres_client.cookies.get(main.COOKIE_NAME)
     assert token, "Registration should issue a session cookie"
 
-    # Each TestClient has its own cookie jar and issues requests through its own client.
+    # Send the same opaque session cookie explicitly on both clients so the test exercises
+    # concurrent saves, not differences in TestClient cookie-jar domain matching.
+    postgres_client.cookies.clear()
     with TestClient(main.app, base_url="http://testserver") as second_client:
-        second_client.cookies.set(main.COOKIE_NAME, token, domain="testserver", path="/")
         start_together = Barrier(2)
 
         def save(client: TestClient, title: str):
