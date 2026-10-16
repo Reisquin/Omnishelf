@@ -43,7 +43,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 ## Remaining gaps
 
 - Full authenticated live session-cookie verification cannot be completed until a controlled test session exists. API-level cookie tests pass in CI.
-- Stale-revision (409) rejection, PostgreSQL concurrent first writes, sign-out/sign-in snapshot persistence, and per-account isolation now pass automated tests against a disposable PostgreSQL 16 CI database. Running those same authenticated scenarios against the hosted Render + Neon pair remains pending. Public registration stays disabled; do not expose a registration window just to test these.
+- Hosted authenticated session, concurrent-save, stale-revision, logout/re-login persistence, two-account isolation, data export, and password-confirmed deletion tests now pass against the real staging Render + Neon pair. Public registration stays disabled; do not expose a registration window just to test these.
 - The Render API used to create the service did not expose its native health-check-path setting. The deployed smoke workflow explicitly checks `/healthz`; `render.free.yaml` declares `healthCheckPath: /healthz` for Blueprint-based recreation.
 - Manual native-snapshot/restore and data-bearing PostgreSQL dump/restore drills passed on 2026-10-16. Automated snapshot scheduling is not enabled for this Neon project, so recurring backup policy remains open; independent security review is also pending. Do not consider the site production-ready yet.
 
@@ -56,7 +56,7 @@ Latest live smoke workflow passed on 2026-10-16: https://github.com/Reisquin/Omn
 
 ## Before public launch
 
-Email verification, password recovery, account deletion/export, shared rate-limiting/abuse controls, an enabled production backup schedule/retention policy, independent security review, and provider/licensing review remain required. The backup/restore drill passed, but automated snapshots are not enabled for this Neon project. Keep public registration disabled until the remaining controls are complete.
+Email verification, password recovery, shared rate-limiting/abuse controls, an enabled production backup schedule/retention policy, independent security review, and provider/licensing review remain required. Data export and password-confirmed account deletion are implemented and tested. The backup/restore drill passed, but automated snapshots are not enabled for this Neon project. Keep public registration disabled until the remaining controls are complete.
 
 
 ## Authenticated flow coverage — production-mode PostgreSQL test
@@ -88,7 +88,7 @@ Date: 2026-10-16
 - The staging branch was checked read-only after deployment: users=0, sessions=0, state_snapshots=0; migration 001_initial_backend is present.
 - Passed staging smoke and screenshot workflow: [run 38860955820](https://github.com/Reisquin/Omnishelf/actions/runs/38860955820). It checks PostgreSQL-backed /healthz, HTTPS HSTS and nosniff, anonymous auth identity, anonymous state denial (401/no-store), closed registration (403), root page, JavaScript errors, and mobile overflow. The same workflow also passed the pre-existing live preview smoke checks.
 - Staging screenshots are in artifact omnishelf-1.3.8-auth-staging-previews (artifact ID 12028079809, available until 2026-10-30), extracted as omnishelf-1.3.8-auth-staging-desktop.png and omnishelf-1.3.8-auth-staging-mobile.png.
-- Still pending: an authenticated request-level test against the staging Render URL that creates a temporary account only in the isolated staging branch, tests login/cookies, cloud save/read, stale-revision 409, relogin persistence, and two-account isolation, then removes its own test records. Current workflow runner can reach staging with GET/POST, but this assistant execution environment cannot make arbitrary outbound HTTP requests; no account or test data was seeded. Do not claim this authenticated hosted flow has passed. Registration remains disabled.
+- Closed later on 2026-10-16: hosted authentication, cloud save/read, stale-revision handling, relogin persistence and two-account isolation passed in run 38862355701; data export and account deletion passed in run 38866747552. Both runs used ephemeral accounts and cleaned up their own test records. Registration remains disabled.
 
 ## Hosted authenticated acceptance — passed 2026-10-16
 
@@ -115,4 +115,15 @@ Date: 2026-10-16
 - **Recurring backup schedule is not configured:** an attempt to set a daily schedule on the primary branch was rejected because “backup schedule creation is not enabled for this project.” The manual snapshot expires at 2026-10-30T00:00:00Z; it is a drill/recovery point, not a long-term recurring policy.
 - One isolated drill-source branch (br-old-violet-aoe919fi, backup-restore-drill-source-2026-10-16) retains exactly one synthetic, non-login canary account and its snapshot as test evidence. It is not the primary or staging branch and no Render service uses it. It was not deleted because branch deletion/data deletion is destructive; remove it only after explicit approval.
 - Latest live-preview smoke passed in [run 38864850271](https://github.com/Reisquin/Omnishelf/actions/runs/38864850271). Desktop/mobile screenshots are in artifact omnishelf-1.3.8-live-acceptance, ID 12030607732, available until 2026-10-30.
+
+## Account data export and self-service deletion — 2026-10-16
+
+- Added authenticated API route GET /api/me/export, returning a downloadable JSON account export with account metadata and the cloud snapshot. The document excludes password hashes, session token hashes, and session records; the response is an attachment with Cache-Control: no-store.
+- Added DELETE /api/me/account. It requires the current password and an allowed origin, rejects an incorrect password, deletes the caller's cloud snapshot and all server-side sessions, deletes the account, and expires the current browser's session cookie. It does not clear the separate local browser library.
+- Added account-panel UI controls: “Download my account data” and “Delete account”. The deletion flow warns that removal is permanent and asks for the current password.
+- All five CI jobs passed: [run 38866747602](https://github.com/Reisquin/Omnishelf/actions/runs/38866747602), including isolated API tests, PostgreSQL integration tests, the new account export/delete cases, the mocked browser journey, and layout screenshots.
+- Hosted staging acceptance passed: [run 38866747552](https://github.com/Reisquin/Omnishelf/actions/runs/38866747552). It verified exported JSON contains the account's library and no password/session secrets, incorrect-password deletion is refused, valid deletion removes cloud state and revokes multiple sessions, and deleting the second account does not affect the first account's library. Two random accounts were created; the secondary was deleted by the test and the cleanup hook removed the remaining temporary account.
+- Both hosted deployments now run commit bb61134d992ec895c1f98c441f4b8286dbde7ea7: the staging deployment is dep-db8t0davcj2c73b45t10 and the separate 1.3.8 preview deployment is dep-db8t0ejl550s73f3i9d0. The original 1.0.0 service and main source branch remain untouched.
+- Post-test read-only checks confirmed both primary and staging branches have zero users, sessions, and snapshots. Public registration remains disabled.
+- Fresh previews are in workflow artifacts omnishelf-1.3.8-auth-staging-previews (ID 12031282360), omnishelf-1.3.8-live-acceptance (ID 12030914679), and omnishelf-1.3.8-layout-previews (ID 12031442078), retained through 2026-10-30.
 

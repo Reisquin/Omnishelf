@@ -260,3 +260,16 @@ Date: 2026-10-16
 - Latest live preview smoke passed in [run 38864850271](https://github.com/Reisquin/Omnishelf/actions/runs/38864850271); fresh desktop/mobile previews are available in artifact omnishelf-1.3.8-live-acceptance, ID 12030607732, through 2026-10-30.
 - Remaining: enable a recurring backup strategy when project permissions/plan allow it, and later run a recovery test from that recurring schedule. Registration remains disabled pending account recovery/export/deletion, abuse-control, security, and licensing work.
 
+## Completed work step — account data export and password-confirmed deletion
+
+Date: 2026-10-16
+
+- Added GET /api/me/export to produce a downloadable JSON export containing the caller's account metadata and saved cloud library. It omits password hashes and session/token secrets and sets a no-store attachment response.
+- Added DELETE /api/me/account, requiring an accepted Origin and correct current password. It removes the account, saved cloud snapshot, and all sessions, expires the current session cookie, and leaves local browser data untouched.
+- Added “Download my account data” and “Delete account” controls to the account/cloud-sync panel. The UI downloads the JSON file and requires both an explicit permanent-deletion confirmation and password prompt.
+- API tests cover export content/secrecy, wrong-password rejection, current account/session removal, revocation of a second session, and denial of cloud access after deletion. PostgreSQL integration repeats export/deletion against the disposable PostgreSQL service. Playwright tests cover the download, deletion prompt, and local-library retention.
+- Real hosted tests passed in [run 38866747552](https://github.com/Reisquin/Omnishelf/actions/runs/38866747552): exported library contents verified without secrets; wrong password rejected; correct password removed account two and revoked its other session; account one's data stayed intact. The OIDC-protected cleanup removed the other temporary account after the test.
+- Five-job CI passed in [run 38866747602](https://github.com/Reisquin/Omnishelf/actions/runs/38866747602). Both isolated 1.3.8 deployments are live on commit bb61134d992ec895c1f98c441f4b8286dbde7ea7; original 1.0.0 release remains untouched. Read-only database checks confirmed no user/session/snapshot rows remain in primary or staging.
+- Fresh screenshots: artifact omnishelf-1.3.8-auth-staging-previews (ID 12031282360), omnishelf-1.3.8-live-acceptance (ID 12030914679), and omnishelf-1.3.8-layout-previews (ID 12031442078), available through 2026-10-30.
+- Remaining pre-launch blockers: email verification, password recovery, shared rate limiting/abuse controls, recurring backups/retention (Neon schedule creation is disabled for this project), independent security review, and provider/licensing review. Registration remains disabled.
+
