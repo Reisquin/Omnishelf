@@ -20,7 +20,12 @@ The deployed smoke-test workflow succeeded on 2026-10-16:
 - `POST /api/auth/register` returned HTTP 403 as intended.
 - Desktop and mobile Playwright checks passed with no uncaught JavaScript errors or mobile horizontal overflow. Screenshots were captured from the live service.
 
-Run evidence: https://github.com/Reisquin/Omnishelf/actions/runs/38826841911
+Run evidence: https://github.com/Reisquin/Omnishelf/actions/runs/38851867077
+
+
+The integration suite also runs against a disposable PostgreSQL 16 service in GitHub Actions. It applies the versioned Alembic migration and passes checks for stale snapshot revisions, concurrent first-time saves, session persistence after sign-in, and account isolation. This verifies PostgreSQL behavior in CI without creating test accounts in the hosted Neon preview database. Evidence: https://github.com/Reisquin/Omnishelf/actions/runs/38851867171
+
+The hosted preview still has no test account because registration is intentionally disabled. Authenticated testing against the hosted Render + Neon pair remains open until a controlled test-account setup is ready.
 
 ## Free-tier limitations and cost guardrails
 
