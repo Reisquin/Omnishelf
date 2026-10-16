@@ -5,8 +5,8 @@
 - [x] API tests pass against isolated SQLite, including session-cookie flags, account snapshot isolation, stale revisions, safety headers and request size limits.
 - [x] Alembic migrations apply to a fresh SQLite database.
 - [x] Playwright checks desktop/mobile, favourite category order, JavaScript exceptions and mobile overflow.
-- [x] Live smoke workflow checks health, PostgreSQL, HTTPS headers, disabled registration, root route, desktop/mobile rendering and captures real screenshots (run 38826841911).
-- [ ] Exercise concurrent first-time snapshot writes against PostgreSQL; SQLite CI is not a substitute for a production-dialect check.
+- [x] Live smoke workflow checks health, PostgreSQL, HTTPS headers, disabled registration, root route, desktop/mobile rendering and captures real screenshots (run 38851867077).
+- [x] PostgreSQL 16 integration suite applies Alembic migrations and verifies stale-revision conflicts, concurrent first-time snapshot writes, session persistence after re-login, and per-account isolation (run 38851867171). Tests use an ephemeral CI database, not the hosted Neon database.
 
 ## Deployment configuration
 - [x] Isolated branch `deploy/1.3.8-https-preview`; existing `main` and 1.0.0 service unchanged.
@@ -32,11 +32,11 @@
 - [x] `/api/auth/me` returns 200 and `Cache-Control: no-store`.
 - [x] Registration remains disabled and returns HTTP 403.
 - [ ] Successful live login's Set-Cookie attributes (Secure, HttpOnly, SameSite=Lax); source/unit tests verify these flags, but no authenticated test session has been created while registration is closed.
-- [ ] Snapshot write/read survives sign-out/sign-in and an app redeploy.
-- [ ] Stale snapshot revision returns 409 without overwriting newer data.
-- [ ] Two separate test accounts cannot access each other's snapshots.
+- [ ] Hosted Neon snapshot write/read survives sign-out/sign-in and an app redeploy (automated PostgreSQL CI test passes; hosted authenticated test still pending).
+- [ ] Hosted Neon stale snapshot revision returns 409 without overwriting newer data (automated PostgreSQL CI test passes; hosted authenticated test still pending).
+- [ ] Hosted Neon two-account isolation test (automated PostgreSQL CI test passes; hosted authenticated test still pending).
 - [x] Live frontend loads without uncaught JavaScript errors on desktop and mobile.
-- [x] Full-page screenshots captured from live service: https://github.com/Reisquin/Omnishelf/actions/runs/38826841911
+- [x] Full-page screenshots captured from live service: https://github.com/Reisquin/Omnishelf/actions/runs/38851867077
 - [x] Deployment uses the Render Free plan and Neon Free plan. Neon currently lists 100 CU-hours, 0.5 GB storage, and 5 GB public network transfer per project/month; usage must be reviewed periodically.
 
 ## Before public launch
