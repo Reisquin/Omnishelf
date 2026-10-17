@@ -280,7 +280,7 @@ def main() -> None:
             page.get_by_text("Not uploaded yet", exact=True).wait_for(timeout=5000)
 
             # Preserve a real screenshot of the authenticated UI fixture for the build artifact.
-            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.8-cloud-sync-connected.png"), full_page=True)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-cloud-sync-connected.png"), full_page=True)
 
             dialogs = []
             def handle_dialog(dialog):
