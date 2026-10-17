@@ -1,4 +1,4 @@
-name: OmniShelf 1.3.8 checks
+name: OmniShelf 1.3.9 checks
 
 on:
   push:
@@ -54,6 +54,7 @@ jobs:
           env = {item["key"]: item for item in service["envVars"]}
           assert env["DATABASE_URL"].get("sync") is False, "Database URL must be a dashboard-only secret"
           assert env["REGISTRATION_ENABLED"].get("value") == "false", "Public registration must stay disabled"
+          assert env["EMAIL_VERIFICATION_REQUIRED"].get("value") == "true", "Hosted account verification must stay required"
           assert env["COOKIE_SECURE"].get("value") == "true", "HTTPS-only cookies must stay enabled"
           dockerfile = Path("Dockerfile").read_text()
           assert "EXPOSE 10000" in dockerfile, "Docker image must expose Render's default HTTP port 10000"
@@ -155,7 +156,7 @@ jobs:
                   raise AssertionError(f"Profile favourites are out of order: {actual_favorites}")
               if desktop_errors:
                   raise AssertionError(f"Desktop JavaScript errors: {desktop_errors}")
-              desktop.screenshot(path="artifacts/omnishelf-1.3.8-desktop.png", full_page=True)
+              desktop.screenshot(path="artifacts/omnishelf-1.3.9-desktop.png", full_page=True)
 
               mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
               mobile_errors = []
@@ -167,7 +168,7 @@ jobs:
               overflow = mobile.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
               if overflow:
                   raise AssertionError("Mobile layout has horizontal page overflow")
-              mobile.screenshot(path="artifacts/omnishelf-1.3.8-mobile.png", full_page=True)
+              mobile.screenshot(path="artifacts/omnishelf-1.3.9-mobile.png", full_page=True)
               browser.close()
           PY
       - name: Exercise account and cloud-sync screens with an isolated mocked API
@@ -175,7 +176,7 @@ jobs:
       - name: Upload layout preview images
         uses: actions/upload-artifact@v4
         with:
-          name: omnishelf-1.3.8-layout-previews
+          name: omnishelf-1.3.9-layout-previews
           path: artifacts/*.png
           retention-days: 14
 
