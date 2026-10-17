@@ -243,6 +243,7 @@ def main() -> None:
             page.locator("#cloudAuthForm").wait_for(state="visible", timeout=5000)
             page.locator("#cloudForgotPassword").wait_for(state="visible", timeout=3000)
             page.locator("#cloudResendVerification").wait_for(state="visible", timeout=3000)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-sign-in-recovery-links.png"), full_page=True)
             page.locator("#cloudForgotPassword").click()
             page.locator("#cloudRecoveryEmail").fill("test-reader@example.invalid")
             page.locator("#cloudRecoverySubmit").click()
@@ -267,6 +268,7 @@ def main() -> None:
             assert "fixture-verification-token" not in page.url
             page.goto(f"{base_url}/index.html#profile?reset_password=fixture-reset-token", wait_until="domcontentloaded")
             page.locator("#cloudNewPassword").wait_for(state="visible", timeout=5000)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-password-reset.png"), full_page=True)
             assert "reset_password" not in page.url
             assert "fixture-reset-token" not in page.url
             page.locator("#cloudNewPassword").fill("a-ui-reset-password-123")
