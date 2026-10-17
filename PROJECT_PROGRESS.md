@@ -286,3 +286,15 @@ Date: 2026-10-16
 
 - Deployment verification caveat: staging's Neon branch confirms migration 002, and the preview service's PostgreSQL startup logs show that Alembic ran the same upgrade. A direct query to the known Neon project's primary branch still reports 001 and no auth_rate_limits table, so the preview service's exact DATABASE_URL target remains unverified. Confirm the service-to-database mapping before using Neon main as the preview's backing store. Do not change the connection string blindly.
 - Fresh post-deployment screenshot artifacts are auth staging previews ID 12033323664, live screenshots ID 12033277508, and layout previews ID 12032499043, retained through 2026-10-30.
+
+
+## Feature build 1.3.9 — email verification and password recovery
+Date: 2026-10-18
+
+- Created isolated branch `feature/1.3.9-email-verification-password-reset` from the accepted 1.3.8 HTTPS preview. This is a code branch only: it has not been merged or deployed, and the 1.3.8 live service remains unchanged.
+- Added migration `003_email_verification_and_reset`: records an email-verification timestamp, marks accounts created before this feature as verified so existing logins survive, and adds a token table with single-purpose hashes, expiry, and cascading account deletion.
+- Added account verification, resend-verification, password-reset request, and password-reset confirmation endpoints. Verification/reset tokens are random, stored as SHA-256 hashes, expire (24h/30m defaults), and are serialized with a row lock when consumed. Password recovery changes the Argon2 hash and revokes all server sessions.
+- Added rate-limit buckets for verification and reset requests/actions; generic request responses avoid revealing whether an email belongs to an account. Hosted mail requires STARTTLS, a configured sender, and the trusted HTTPS `PUBLIC_APP_ORIGIN`. If mail is not configured, signup/recovery fails closed; hosted public registration remains disabled.
+- Added sign-in UI links for forgotten passwords and resending verification email, a reset-password form, email-link handling, API tests using a mocked mail sender, PostgreSQL integration coverage, and Playwright UI coverage. The build version and desktop/mobile screenshot artifact labels are 1.3.9.
+- Validation status at note creation: source and CI configuration committed on the feature branch, but CI has not yet been reported green. Do not call this release-ready until the pull-request checks and screenshot artifact succeed.
+- Remaining before any deployment: configure and test an SMTP sender in secret settings; verify the preview service's real Neon target instead of assuming it is the currently listed primary branch; reconcile migration target; retain public registration disabled; then complete backup-retention, independent security and provider/licensing reviews.
