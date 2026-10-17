@@ -45,6 +45,8 @@ def postgres_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     main.app.dependency_overrides[main.get_db] = override_get_db
     monkeypatch.setattr(main, "REGISTRATION_ENABLED", True)
     monkeypatch.setattr(main, "COOKIE_SECURE", False)
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", False)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", False)
 
     try:
         with TestClient(main.app, base_url="http://testserver") as client:
