@@ -131,7 +131,7 @@ class AuthEmailToken(Base):
 # Database schema is created/changed only by the versioned Alembic migrations.
 # This prevents each web-worker startup from racing to mutate production schema.
 
-app = FastAPI(title="OmniShelf API", version="1.3.8", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="OmniShelf API", version="1.3.9", docs_url=None, redoc_url=None, openapi_url=None)
 if FRONTEND_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -525,7 +525,7 @@ def healthz(db: DBSession = Depends(get_db)):
         db.execute(select(User.id).limit(1))
     except SQLAlchemyError:
         raise HTTPException(status_code=503, detail="Database unavailable.")
-    return {"status": "ok", "database": "ok", "version": "1.3.8"}
+    return {"status": "ok", "database": "ok", "version": "1.3.9"}
 
 @app.post("/api/auth/register", status_code=201)
 def register(payload: RegisterBody, request: Request, response: Response, db: DBSession = Depends(get_db)):
@@ -915,7 +915,7 @@ if STAGING_ACCEPTANCE_ENABLED:
 
 @app.get("/api")
 def api_root():
-    return {"name": "OmniShelf API", "version": "1.3.8", "health": "/healthz", "account": "/api/auth/me", "cloud_state": "/api/me/state"}
+    return {"name": "OmniShelf API", "version": "1.3.9", "health": "/healthz", "account": "/api/auth/me", "cloud_state": "/api/me/state"}
 
 
 @app.get("/{asset_path:path}", include_in_schema=False)
