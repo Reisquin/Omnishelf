@@ -1077,7 +1077,9 @@ async function renderCloudAccountModal(message=''){
 function openCloudAccountModal(){renderCloudAccountModal()}
 
 async function init(){await restore();normalizeRestoredState();ensureAppearance();bindEvents();renderAll();await persist();window.addEventListener('popstate',routeFromLocation);window.addEventListener('hashchange',routeFromLocation);routeFromLocation()}
-init().then(()=>processOmniShelfAccountLink()).catch(err=>{console.error('OmniShelf startup failed',err)});
+const omniShelfReady=init();
+window.addEventListener('hashchange',()=>omniShelfReady.then(()=>processOmniShelfAccountLink()).catch(err=>{console.error('OmniShelf link handling failed',err)}));
+omniShelfReady.then(()=>processOmniShelfAccountLink()).catch(err=>{console.error('OmniShelf startup failed',err)});
 })();
 </script>
 </body>
