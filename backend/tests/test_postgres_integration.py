@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -366,3 +367,50 @@ def test_postgres_rate_limit_is_shared_and_concurrency_safe(postgres_client: Tes
     finally:
         for test_client in clients:
             test_client.close()
+
+
+
+def test_postgres_email_verification_uses_one_time_hashed_token(
+    postgres_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    delivered: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    created = postgres_client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={
+            "username": "pg_verified_reader",
+            "email": "pg-verified@example.com",
+            "password": "integration-test-password-123",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["requires_email_verification"] is True
+    assert "set-cookie" not in created.headers
+    assert len(delivered) == 1
+    link = next(line.strip() for line in delivered[0][2].splitlines() if "verify_email=" in line)
+    token = parse_qs(urlparse(link).query)["verify_email"][0]
+
+    session = postgres_client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "pg_verified_reader", "password": "integration-test-password-123"},
+    )
+    assert session.status_code == 403
+
+    verified = postgres_client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": token})
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["user"]["email_verified"] is True
+    replay = postgres_client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": token})
+    assert replay.status_code == 400
+
+    signed_in = postgres_client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "pg_verified_reader", "password": "integration-test-password-123"},
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.json()["user"]["email_verified"] is True
