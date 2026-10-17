@@ -420,7 +420,8 @@ def _auth_email_link(request: Request, parameter: str, token: str) -> str:
         raise RuntimeError("PUBLIC_APP_ORIGIN must be set to the trusted HTTPS app origin.")
     else:
         origin = f"{request.url.scheme}://{request.url.netloc}"
-    return f"{origin}/?{urlencode({parameter: token})}"
+    # Email tokens live in the URL fragment, which browsers do not send to the web server in HTTP requests.
+    return f"{origin}/#profile?{urlencode({parameter: token})}"
 
 
 def _send_verification_email(request: Request, user: User, token: str) -> None:
