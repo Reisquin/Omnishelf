@@ -12,11 +12,16 @@ import json
 import os
 import re
 import secrets
+import smtplib
+import ssl
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from email.utils import formataddr
 from pathlib import Path
 from typing import Any, Generator
+from urllib.parse import urlencode
 
 import jwt
 from argon2 import PasswordHasher
@@ -44,6 +49,20 @@ MAX_RECORDS = 100_000
 PUBLIC_APP_ORIGIN = os.getenv("PUBLIC_APP_ORIGIN", "").strip().rstrip("/")
 RENDER_ENVIRONMENT = os.getenv("RENDER", "").strip().lower() == "true"
 FRONTEND_ORIGINS = {x.strip().rstrip("/") for x in os.getenv("FRONTEND_ORIGIN", "").split(",") if x.strip()}
+# Email verification is enabled by default. Public signup remains closed until explicitly enabled.
+EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").strip().lower() in {"1", "true", "yes", "on"}
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "OmniShelf").strip() or "OmniShelf"
+SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes", "on"}
+SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_FROM_EMAIL)
+EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
+PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
+if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
+    raise RuntimeError("Hosted registration cannot bypass email verification.")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'omnishelf-dev.db'}")
 # Render and some managed providers may supply the legacy postgres:// form.
@@ -67,6 +86,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    # Existing accounts are grandfathered as verified by migration 003; new public registrations must verify.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class LoginSession(Base):
     __tablename__ = "sessions"
@@ -90,6 +111,17 @@ class AuthRateLimit(Base):
     client_key: Mapped[str] = mapped_column(String(64), primary_key=True)
     window_started: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+class AuthEmailToken(Base):
+    """One-time email-verification and password-reset tokens; only their hashes are persisted."""
+    __tablename__ = "auth_email_tokens"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 # Database schema is created/changed only by the versioned Alembic migrations.
 # This prevents each web-worker startup from racing to mutate production schema.
@@ -165,6 +197,32 @@ class DeleteAccountBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     password: str = Field(min_length=1, max_length=256)
 
+class EmailAddressBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=5, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if len(value) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+class EmailTokenBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=20, max_length=256)
+
+class PasswordResetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=20, max_length=256)
+    password: str = Field(min_length=12, max_length=256)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return RegisterBody.validate_password(value)
+
 class CloudStateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=0)
@@ -197,7 +255,14 @@ class CloudStateBody(BaseModel):
 # Shared database-backed auth throttles: 5 registrations/hour and 10 logins/15 minutes.
 # The HMAC key is consistent across instances because DATABASE_URL is shared; deployments may
 # set RATE_LIMIT_HASH_KEY explicitly to decouple address-hash rotation from database credentials.
-_RATE_LIMITS = {"register": (5, 3600), "login": (10, 900)}
+_RATE_LIMITS = {
+    "register": (5, 3600),
+    "login": (10, 900),
+    "verify_start": (3, 3600),
+    "verify_apply": (10, 900),
+    "reset_start": (3, 3600),
+    "reset_apply": (10, 900),
+}
 _RATE_LIMIT_HASH_KEY = os.getenv("RATE_LIMIT_HASH_KEY", DATABASE_URL).encode("utf-8")
 
 def _rate_limit_client_host(request: Request) -> str:
@@ -295,8 +360,106 @@ def get_db() -> Generator[DBSession, None, None]:
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+
+def _send_email(recipient: str, subject: str, body: str) -> None:
+    """Deliver a plain-text account email over SMTP; never fall back to plaintext credentials."""
+    if not SMTP_CONFIGURED:
+        raise RuntimeError("Email delivery is not configured.")
+    message = EmailMessage()
+    message["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_EMAIL))
+    message["To"] = recipient
+    message["Subject"] = subject
+    message.set_content(body)
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+        server.ehlo()
+        if SMTP_STARTTLS:
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
+        elif SMTP_USERNAME or SMTP_PASSWORD:
+            raise RuntimeError("Refusing to authenticate to SMTP without STARTTLS.")
+        if SMTP_USERNAME:
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.send_message(message)
+
+
+def _create_auth_token(db: DBSession, user: User, purpose: str) -> str:
+    if purpose not in {"verify_email", "password_reset"}:
+        raise ValueError("Unsupported auth token purpose.")
+    db.query(AuthEmailToken).filter(
+        AuthEmailToken.user_id == user.id,
+        AuthEmailToken.purpose == purpose,
+    ).delete(synchronize_session=False)
+    raw_token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    ttl = EMAIL_VERIFICATION_TTL_SECONDS if purpose == "verify_email" else PASSWORD_RESET_TTL_SECONDS
+    db.add(AuthEmailToken(
+        user_id=user.id,
+        purpose=purpose,
+        token_hash=_token_hash(raw_token),
+        created_at=now,
+        expires_at=now + timedelta(seconds=ttl),
+    ))
+    db.commit()
+    return raw_token
+
+
+def _auth_email_link(request: Request, parameter: str, token: str) -> str:
+    # The deployed app must set PUBLIC_APP_ORIGIN. The request origin is retained for local development.
+    origin = PUBLIC_APP_ORIGIN or f"{request.url.scheme}://{request.url.netloc}"
+    return f"{origin}/?{urlencode({parameter: token})}"
+
+
+def _send_verification_email(request: Request, user: User, token: str) -> None:
+    link = _auth_email_link(request, "verify_email", token)
+    hours = max(1, EMAIL_VERIFICATION_TTL_SECONDS // 3600)
+    _send_email(
+        user.email,
+        "Verify your OmniShelf email",
+        f"Hello {user.username},\n\n"
+        f"Use this one-time link within {hours} hour(s) to verify your OmniShelf email address:\n"
+        f"{link}\n\n"
+        "If you did not create this account, you can ignore this message.\n",
+    )
+
+
+def _send_password_reset_email(request: Request, user: User, token: str) -> None:
+    link = _auth_email_link(request, "reset_password", token)
+    minutes = max(1, PASSWORD_RESET_TTL_SECONDS // 60)
+    _send_email(
+        user.email,
+        "Reset your OmniShelf password",
+        f"Hello {user.username},\n\n"
+        f"Use this one-time link within {minutes} minute(s) to choose a new OmniShelf password:\n"
+        f"{link}\n\n"
+        "Changing your password will sign out your existing sessions. "
+        "If you did not request this, ignore this message.\n",
+    )
+
+
+def _get_valid_auth_token(db: DBSession, raw_token: str, purpose: str) -> AuthEmailToken:
+    token = db.scalar(select(AuthEmailToken).where(
+        AuthEmailToken.token_hash == _token_hash(raw_token),
+        AuthEmailToken.purpose == purpose,
+    ))
+    if token is None or token.used_at is not None:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    expiry = token.expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if expiry <= datetime.now(timezone.utc):
+        db.delete(token)
+        db.commit()
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    return token
+
 def _public_user(user: User) -> dict[str, Any]:
-    return {"id": user.id, "username": user.username, "email": user.email, "created_at": _iso(user.created_at)}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "created_at": _iso(user.created_at),
+        "email_verified": user.email_verified_at is not None,
+    }
 
 def _iso(value: datetime | None) -> str | None:
     if value is None:
@@ -355,11 +518,18 @@ def register(payload: RegisterBody, request: Request, response: Response, db: DB
     if not REGISTRATION_ENABLED:
         raise HTTPException(status_code=403, detail="Account registration is temporarily disabled. Sign-in remains available for existing accounts.")
     _verify_origin(request)
+    if EMAIL_VERIFICATION_REQUIRED and not SMTP_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Email delivery is not configured. Account registration is unavailable.")
     _rate_limit(request, "register", db)
     existing = db.scalar(select(User).where((User.username == payload.username) | (User.email == payload.email)))
     if existing:
         raise HTTPException(status_code=409, detail="That username or email is already registered.")
-    user = User(username=payload.username, email=payload.email, password_hash=password_hasher.hash(payload.password))
+    user = User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=password_hasher.hash(payload.password),
+        email_verified_at=None if EMAIL_VERIFICATION_REQUIRED else datetime.now(timezone.utc),
+    )
     db.add(user)
     try:
         db.commit()
@@ -367,6 +537,19 @@ def register(payload: RegisterBody, request: Request, response: Response, db: DB
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="That username or email is already registered.")
+    if EMAIL_VERIFICATION_REQUIRED:
+        token = _create_auth_token(db, user, "verify_email")
+        try:
+            _send_verification_email(request, user, token)
+        except (smtplib.SMTPException, OSError, RuntimeError):
+            raise HTTPException(
+                status_code=503,
+                detail="Your account was created, but the verification email could not be sent. Sign in to request another verification email.",
+            )
+        return {
+            "requires_email_verification": True,
+            "message": "Account created. Check your email for a verification link before signing in.",
+        }
     _issue_session(response, db, user)
     return {"user": _public_user(user)}
 
@@ -384,6 +567,11 @@ def login(payload: LoginBody, request: Request, response: Response, db: DBSessio
             valid = False
     if not user or not valid:
         raise HTTPException(status_code=401, detail="The username/email or password was incorrect.")
+    if EMAIL_VERIFICATION_REQUIRED and user.email_verified_at is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Please verify your email before signing in. Use Resend verification email to request another link.",
+        )
     _issue_session(response, db, user)
     return {"user": _public_user(user)}
 
@@ -399,6 +587,81 @@ def logout(request: Request, response: Response, db: DBSession = Depends(get_db)
     response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, secure=COOKIE_SECURE, samesite="lax")
     response.status_code = 204
     return response
+
+
+
+@app.post("/api/auth/verify-email")
+def verify_email(payload: EmailTokenBody, request: Request, db: DBSession = Depends(get_db)):
+    _verify_origin(request)
+    _rate_limit(request, "verify_apply", db)
+    token = _get_valid_auth_token(db, payload.token, "verify_email")
+    user = db.get(User, token.user_id)
+    if user is None:
+        db.delete(token)
+        db.commit()
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    user.email_verified_at = datetime.now(timezone.utc)
+    db.query(AuthEmailToken).filter(
+        AuthEmailToken.user_id == user.id,
+        AuthEmailToken.purpose == "verify_email",
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"verified": True, "user": _public_user(user)}
+
+
+@app.post("/api/auth/verification-email", status_code=202)
+def request_verification_email(payload: EmailAddressBody, request: Request, db: DBSession = Depends(get_db)):
+    _verify_origin(request)
+    if not SMTP_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Email delivery is not configured. Verification email requests are unavailable.")
+    _rate_limit(request, "verify_start", db)
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is not None and user.email_verified_at is None:
+        token = _create_auth_token(db, user, "verify_email")
+        try:
+            _send_verification_email(request, user, token)
+        except (smtplib.SMTPException, OSError, RuntimeError):
+            raise HTTPException(status_code=503, detail="The verification email could not be sent. Try again later.")
+    return {"message": "If an unverified OmniShelf account uses that email, a verification link will arrive shortly."}
+
+
+@app.post("/api/auth/password-reset/request", status_code=202)
+def request_password_reset(payload: EmailAddressBody, request: Request, db: DBSession = Depends(get_db)):
+    _verify_origin(request)
+    if not SMTP_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Email delivery is not configured. Password recovery is unavailable.")
+    _rate_limit(request, "reset_start", db)
+    user = db.scalar(select(User).where(User.email == payload.email))
+    # Verified status is required before password recovery; the response does not reveal account existence.
+    if user is not None and user.email_verified_at is not None:
+        token = _create_auth_token(db, user, "password_reset")
+        try:
+            _send_password_reset_email(request, user, token)
+        except (smtplib.SMTPException, OSError, RuntimeError):
+            raise HTTPException(status_code=503, detail="The password-reset email could not be sent. Try again later.")
+    return {"message": "If a verified OmniShelf account uses that email, password-reset instructions will arrive shortly."}
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetBody, request: Request, db: DBSession = Depends(get_db)):
+    _verify_origin(request)
+    _rate_limit(request, "reset_apply", db)
+    token = _get_valid_auth_token(db, payload.token, "password_reset")
+    user = db.get(User, token.user_id)
+    if user is None or user.email_verified_at is None:
+        db.delete(token)
+        db.commit()
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    user.password_hash = password_hasher.hash(payload.password)
+    # Password recovery revokes every existing session before reporting success.
+    db.query(LoginSession).filter(LoginSession.user_id == user.id).delete(synchronize_session=False)
+    db.query(AuthEmailToken).filter(
+        AuthEmailToken.user_id == user.id,
+        AuthEmailToken.purpose == "password_reset",
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"reset": True, "message": "Password updated. Sign in with your new password."}
+
 
 @app.get("/api/auth/me")
 def whoami(user: User | None = Depends(get_current_user)):
