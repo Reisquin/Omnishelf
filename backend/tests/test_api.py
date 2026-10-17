@@ -552,6 +552,77 @@ def test_password_reset_uses_single_use_token_and_revokes_all_sessions(
     assert replay.status_code == 400
 
 
+
+def test_smtp_delivery_uses_starttls_and_configured_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple] = []
+
+    class FakeSMTP:
+        def __init__(self, host: str, port: int, timeout: int) -> None:
+            calls.append(("connect", host, port, timeout))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            calls.append(("close", exc_type))
+
+        def ehlo(self) -> None:
+            calls.append(("ehlo",))
+
+        def starttls(self, context) -> None:
+            calls.append(("starttls", context))
+
+        def login(self, username: str, password: str) -> None:
+            calls.append(("login", username, password))
+
+        def send_message(self, message) -> None:
+            calls.append(("send", message))
+
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "SMTP_STARTTLS", True)
+    monkeypatch.setattr(main, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(main, "SMTP_PORT", 587)
+    monkeypatch.setattr(main, "SMTP_USERNAME", "sender@example.test")
+    monkeypatch.setattr(main, "SMTP_PASSWORD", "test-only-secret")
+    monkeypatch.setattr(main, "SMTP_FROM_EMAIL", "sender@example.test")
+    monkeypatch.setattr(main, "SMTP_FROM_NAME", "OmniShelf Test")
+    monkeypatch.setattr(main.smtplib, "SMTP", FakeSMTP)
+
+    main._send_email("reader@example.test", "Verification", "One-time test link")
+
+    assert calls[0] == ("connect", "smtp.example.test", 587, 10)
+    assert calls.count(("ehlo",)) == 2
+    tls_calls = [call for call in calls if call[0] == "starttls"]
+    assert len(tls_calls) == 1
+    assert tls_calls[0][1] is not None  # Explicit certificate-validating SSL context.
+    assert ("login", "sender@example.test", "test-only-secret") in calls
+    message = next(call[1] for call in calls if call[0] == "send")
+    assert message["To"] == "reader@example.test"
+    assert message["From"] == "OmniShelf Test <sender@example.test>"
+    assert message["Subject"] == "Verification"
+    assert message.get_content().strip() == "One-time test link"
+
+
+def test_smtp_sender_refuses_delivery_when_starttls_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[tuple] = []
+
+    def unexpected_connection(*args, **kwargs):
+        connections.append((args, kwargs))
+        raise AssertionError("SMTP must not be contacted without STARTTLS.")
+
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "SMTP_STARTTLS", False)
+    monkeypatch.setattr(main.smtplib, "SMTP", unexpected_connection)
+
+    with pytest.raises(RuntimeError, match="STARTTLS is required"):
+        main._send_email("reader@example.test", "Subject", "Body")
+    assert connections == []
+
+
 def test_verification_registration_fails_closed_without_smtp(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
