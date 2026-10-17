@@ -454,7 +454,7 @@ def _get_valid_auth_token(db: DBSession, raw_token: str, purpose: str) -> AuthEm
     token = db.scalar(select(AuthEmailToken).where(
         AuthEmailToken.token_hash == _token_hash(raw_token),
         AuthEmailToken.purpose == purpose,
-    ))
+    ).with_for_update())
     if token is None or token.used_at is not None:
         raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
     expiry = token.expires_at
