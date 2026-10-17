@@ -261,12 +261,14 @@ def main() -> None:
             page.locator("#cloudRecoveryBack").click()
 
             # Verification/reset links remove tokens from browser history before rendering the next step.
-            page.goto(f"{base_url}/index.html?verify_email=fixture-verification-token", wait_until="domcontentloaded")
+            page.goto(f"{base_url}/index.html#profile?verify_email=fixture-verification-token", wait_until="domcontentloaded")
             page.get_by_text("Email verified. You can now sign in.", exact=True).wait_for(timeout=5000)
             assert "verify_email" not in page.url
-            page.goto(f"{base_url}/index.html?reset_password=fixture-reset-token", wait_until="domcontentloaded")
+            assert "fixture-verification-token" not in page.url
+            page.goto(f"{base_url}/index.html#profile?reset_password=fixture-reset-token", wait_until="domcontentloaded")
             page.locator("#cloudNewPassword").wait_for(state="visible", timeout=5000)
             assert "reset_password" not in page.url
+            assert "fixture-reset-token" not in page.url
             page.locator("#cloudNewPassword").fill("a-ui-reset-password-123")
             page.locator("#cloudConfirmPassword").fill("a-ui-reset-password-123")
             page.locator("#cloudRecoverySubmit").click()
