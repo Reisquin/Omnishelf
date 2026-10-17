@@ -374,7 +374,12 @@ def test_staging_acceptance_routes_are_not_available_in_default_preview_mode(
 def _email_link_token(body: str, query_key: str) -> str:
     link = next((line.strip() for line in body.splitlines() if f"{query_key}=" in line), None)
     assert link, f"No {query_key} link was included in the delivered message."
-    return parse_qs(urlparse(link).query)[query_key][0]
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    if query_key in query:
+        return query[query_key][0]
+    fragment = parsed.fragment.split("?", 1)[1] if "?" in parsed.fragment else ""
+    return parse_qs(fragment)[query_key][0]
 
 
 def test_email_verification_requires_one_time_token_and_resend_invalidates_old_link(
