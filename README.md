@@ -1,6 +1,6 @@
-# OmniShelf 1.3.8 — Deployment Preview
+# OmniShelf 1.3.9 — Account Recovery Preview
 
-This branch contains the 1.3.8 single-page frontend and FastAPI persistence foundation. It is intended for a controlled HTTPS preview, not open public registration.
+This feature branch extends the 1.3.8 single-page frontend and FastAPI persistence foundation with email verification and password recovery. It is not deployed. The existing 1.3.8 HTTPS preview remains unchanged until review, database-target reconciliation and email-provider configuration are complete.
 
 ## What is included
 
