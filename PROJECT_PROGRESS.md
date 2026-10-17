@@ -325,3 +325,13 @@ Date: 2026-10-18
 - **Fresh preview artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117200332`, includes desktop, mobile, connected cloud-sync, sign-in recovery links, and password-reset form screenshots; retained through 2026-10-31.
 - The change remains on the draft 1.3.9 feature branch. It does not alter live services or enable public registration.
 - Remaining before a hosted 1.3.9 rollout: configure SMTP credentials/sender through secret settings and verify real email delivery; resolve which Neon database each 1.3.8 service actually uses before applying migration 003; keep public registration closed until provider delivery, backup-retention, independent security, and provider/licensing reviews are complete.
+
+
+## Next launch-readiness step — SMTP transport acceptance
+Date: 2026-10-18
+
+- Added mocked SMTP transport regression tests to prove message delivery uses STARTTLS with certificate validation, performs configured authentication, and refuses delivery if STARTTLS is disabled. These checks avoid contacting any external mail server or using real credentials.
+- Expanded the 1.3.9 README with secret-setting guidance and a pre-launch SMTP acceptance checklist covering real mailbox verification, one-time-link replay, session revocation, generic request responses, and read-only migration-target verification.
+- The feature branch has not been deployed. Real SMTP settings still require a mail provider sender/credentials in Render's private environment settings; no credentials were invented or written into source. Public registration stays disabled.
+- Database mapping remains unresolved: the 1.3.8 free service logs show Alembic revision 002 applied, while the Neon primary branch queried through the available account connection shows revision 001 and the isolated auth-staging branch shows revision 002. Render's available metadata does not reveal the secret database URL, so do not repoint services or apply migration 003 until an authorized in-service target check is available.
+- Independent security review, recurring backup-retention strategy, and provider/licensing review remain required before public launch.
