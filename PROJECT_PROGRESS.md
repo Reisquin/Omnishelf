@@ -316,3 +316,12 @@ Date: 2026-10-18
 - Delivery failures produce fixed, non-sensitive warning messages; exception text, recipients, and email tokens are not written to the application log.
 - Added regression tests that simulate SMTP failures for both existing and nonexistent addresses and assert identical status codes and response bodies.
 - This is still an isolated feature-branch change. It has not been deployed to the 1.3.8 preview, and public registration remains disabled. The updated CI results and refreshed screenshot artifacts should be recorded only after the new branch HEAD passes.
+
+
+### Validation result — recovery privacy hardening
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39075433434](https://github.com/Reisquin/Omnishelf/actions/runs/39075433434) on revision `b9e05b23d6f9e57a2865a1b3a5a74b083309b0a5`; all five jobs passed, including the newly added mocked-SMTP failure regression tests.
+- **Fresh preview artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117200332`, includes desktop, mobile, connected cloud-sync, sign-in recovery links, and password-reset form screenshots; retained through 2026-10-31.
+- The change remains on the draft 1.3.9 feature branch. It does not alter live services or enable public registration.
+- Remaining before a hosted 1.3.9 rollout: configure SMTP credentials/sender through secret settings and verify real email delivery; resolve which Neon database each 1.3.8 service actually uses before applying migration 003; keep public registration closed until provider delivery, backup-retention, independent security, and provider/licensing reviews are complete.
