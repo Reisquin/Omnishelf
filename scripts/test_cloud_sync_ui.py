@@ -263,7 +263,15 @@ def main() -> None:
 
             # Verification/reset links remove tokens from browser history before rendering the next step.
             page.goto(f"{base_url}/index.html#profile?verify_email=fixture-verification-token", wait_until="domcontentloaded")
-            page.get_by_text("Email verified. You can now sign in.", exact=True).wait_for(timeout=5000)
+            try:
+                page.get_by_text("Email verified. You can now sign in.", exact=True).wait_for(timeout=5000)
+            except Exception:
+                print("VERIFY DEBUG URL:", page.url)
+                print("VERIFY DEBUG REQUESTS:", api.requests[-12:])
+                print("VERIFY DEBUG PAGE TEXT:", page.locator("body").inner_text()[-1800:])
+                print("VERIFY DEBUG PAGE ERRORS:", page_errors)
+                page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-verification-debug.png"), full_page=True)
+                raise
             assert "verify_email" not in page.url
             assert "fixture-verification-token" not in page.url
             page.goto(f"{base_url}/index.html#profile?reset_password=fixture-reset-token", wait_until="domcontentloaded")
