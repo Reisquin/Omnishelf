@@ -221,7 +221,11 @@ class PasswordResetBody(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        return RegisterBody.validate_password(value)
+        if len(value) < 12:
+            raise ValueError("Password must contain at least 12 characters.")
+        if value.strip() != value:
+            raise ValueError("Password must not begin or end with whitespace.")
+        return value
 
 class CloudStateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -385,12 +389,13 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
 def _create_auth_token(db: DBSession, user: User, purpose: str) -> str:
     if purpose not in {"verify_email", "password_reset"}:
         raise ValueError("Unsupported auth token purpose.")
+    now = datetime.now(timezone.utc)
+    db.query(AuthEmailToken).filter(AuthEmailToken.expires_at < now).delete(synchronize_session=False)
     db.query(AuthEmailToken).filter(
         AuthEmailToken.user_id == user.id,
         AuthEmailToken.purpose == purpose,
     ).delete(synchronize_session=False)
     raw_token = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
     ttl = EMAIL_VERIFICATION_TTL_SECONDS if purpose == "verify_email" else PASSWORD_RESET_TTL_SECONDS
     db.add(AuthEmailToken(
         user_id=user.id,
@@ -713,6 +718,7 @@ def delete_account(
     # Explicit child deletion also works in SQLite tests where FK enforcement may be off.
     db.query(StateSnapshot).filter(StateSnapshot.user_id == user.id).delete(synchronize_session=False)
     db.query(LoginSession).filter(LoginSession.user_id == user.id).delete(synchronize_session=False)
+    db.query(AuthEmailToken).filter(AuthEmailToken.user_id == user.id).delete(synchronize_session=False)
     db.delete(user)
     db.commit()
     response.delete_cookie(key=COOKIE_NAME, path="/", httponly=True, secure=COOKIE_SECURE, samesite="lax")
