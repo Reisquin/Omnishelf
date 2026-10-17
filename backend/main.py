@@ -58,7 +58,12 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "OmniShelf").strip() or "OmniShelf"
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes", "on"}
-SMTP_CONFIGURED = bool(SMTP_HOST and SMTP_FROM_EMAIL)
+SMTP_CONFIGURED = bool(
+    SMTP_HOST
+    and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", SMTP_FROM_EMAIL)
+    and SMTP_STARTTLS
+    and (not RENDER_ENVIRONMENT or PUBLIC_APP_ORIGIN.startswith("https://"))
+)
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
 if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
@@ -374,13 +379,12 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
+    if not SMTP_STARTTLS:
+        raise RuntimeError("SMTP STARTTLS is required for account email delivery.")
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
         server.ehlo()
-        if SMTP_STARTTLS:
-            server.starttls(context=ssl.create_default_context())
-            server.ehlo()
-        elif SMTP_USERNAME or SMTP_PASSWORD:
-            raise RuntimeError("Refusing to authenticate to SMTP without STARTTLS.")
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
         if SMTP_USERNAME:
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(message)
@@ -409,8 +413,13 @@ def _create_auth_token(db: DBSession, user: User, purpose: str) -> str:
 
 
 def _auth_email_link(request: Request, parameter: str, token: str) -> str:
-    # The deployed app must set PUBLIC_APP_ORIGIN. The request origin is retained for local development.
-    origin = PUBLIC_APP_ORIGIN or f"{request.url.scheme}://{request.url.netloc}"
+    # Never derive hosted account links from an untrusted Host header.
+    if PUBLIC_APP_ORIGIN:
+        origin = PUBLIC_APP_ORIGIN
+    elif RENDER_ENVIRONMENT:
+        raise RuntimeError("PUBLIC_APP_ORIGIN must be set to the trusted HTTPS app origin.")
+    else:
+        origin = f"{request.url.scheme}://{request.url.netloc}"
     return f"{origin}/?{urlencode({parameter: token})}"
 
 
