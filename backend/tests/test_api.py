@@ -437,6 +437,65 @@ def test_email_verification_requires_one_time_token_and_resend_invalidates_old_l
     assert signed_in.json()["user"]["email_verified"] is True
 
 
+
+def test_verification_resend_mail_failure_does_not_disclose_account_existence(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: None)
+
+    created = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "mailfailure", "email": "mailfailure@example.com", "password": "secure-example-pass-123"},
+    )
+    assert created.status_code == 201, created.text
+
+    def fail_delivery(to: str, subject: str, body: str) -> None:
+        raise RuntimeError("simulated SMTP failure with sensitive diagnostic")
+
+    monkeypatch.setattr(main, "_send_email", fail_delivery)
+    known = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "mailfailure@example.com"},
+    )
+    unknown = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert "sensitive diagnostic" not in known.text
+
+
+def test_password_reset_mail_failure_does_not_disclose_account_existence(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register(client, username="resetmailfailure", email="resetmailfailure@example.com")
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+
+    def fail_delivery(to: str, subject: str, body: str) -> None:
+        raise RuntimeError("simulated SMTP failure with sensitive diagnostic")
+
+    monkeypatch.setattr(main, "_send_email", fail_delivery)
+    known = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "resetmailfailure@example.com"},
+    )
+    unknown = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert "sensitive diagnostic" not in known.text
+
+
 def test_password_reset_uses_single_use_token_and_revokes_all_sessions(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
