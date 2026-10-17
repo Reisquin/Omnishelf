@@ -392,7 +392,12 @@ def test_postgres_email_verification_uses_one_time_hashed_token(
     assert "set-cookie" not in created.headers
     assert len(delivered) == 1
     link = next(line.strip() for line in delivered[0][2].splitlines() if "verify_email=" in line)
-    token = parse_qs(urlparse(link).query)["verify_email"][0]
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    token = query.get("verify_email", [None])[0]
+    if token is None:
+        fragment = parsed.fragment.split("?", 1)[1] if "?" in parsed.fragment else ""
+        token = parse_qs(fragment)["verify_email"][0]
 
     session = postgres_client.post(
         "/api/auth/login",
