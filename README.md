@@ -51,6 +51,18 @@ The API now supports one-time email verification, resending a verification messa
 
 Email verification links expire after 24 hours by default; password-reset links expire after 30 minutes. Tokens are random, single-use, and stored only as hashes. Password recovery revokes all active sessions. SMTP authentication is refused when STARTTLS is disabled. If the sender is missing, signup/recovery endpoints fail closed with HTTP 503; public registration remains disabled in the deployed preview. Existing accounts are grandfathered as verified by migration 003.
 
+## SMTP acceptance checklist
+
+Do not put SMTP credentials in GitHub source files, workflow YAML, issue comments, or screenshots. Add them only to the intended Render service's private environment settings. Then verify delivery against a dedicated test mailbox before any production cutover:
+
+1. Confirm `/healthz` succeeds and ordinary public registration is still disabled.
+2. Send a verification email from a controlled test account; open its HTTPS link once, then confirm replay is rejected.
+3. Request a password reset, use the link once, sign in with the new password, and confirm the prior session is revoked.
+4. Confirm the verification/reset-request endpoints return the same generic response for an unknown address and for a known address whose SMTP delivery fails.
+5. After deployment, verify the service's configured database target and applied Alembic revision using read-only checks before treating migration 003 as hosted.
+
+The CI suite uses a mocked SMTP transport to check that STARTTLS with certificate validation and configured authentication are used; this is not a substitute for a real-mailbox delivery test.
+
 ## Known scope limits
 
 This remains a controlled preview, not a public launch. A real SMTP provider still needs to be configured and end-to-end delivery verified; recurring backup scheduling/retention, additional abuse controls, independent security review, and provider/licensing review remain open. Media-upload storage and shared cross-user community data are also not implemented.
