@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +37,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     main.app.dependency_overrides[main.get_db] = override_get_db
     monkeypatch.setattr(main, "REGISTRATION_ENABLED", True)
     monkeypatch.setattr(main, "COOKIE_SECURE", False)
+    # Existing tests cover legacy local development mode; dedicated tests enable verification.
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", False)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", False)
 
     with TestClient(main.app, base_url="http://testserver") as test_client:
         yield test_client
@@ -364,3 +368,135 @@ def test_staging_acceptance_routes_are_not_available_in_default_preview_mode(
     assert main.STAGING_ACCEPTANCE_ENABLED is False
     response = client.post("/__staging/acceptance/cleanup")
     assert response.status_code in (404, 405)
+
+
+
+def _email_link_token(body: str, query_key: str) -> str:
+    link = next((line.strip() for line in body.splitlines() if f"{query_key}=" in line), None)
+    assert link, f"No {query_key} link was included in the delivered message."
+    return parse_qs(urlparse(link).query)[query_key][0]
+
+
+def test_email_verification_requires_one_time_token_and_resend_invalidates_old_link(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    delivered: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    created = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "verifyreader", "email": "verify@example.com", "password": "secure-example-pass-123"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["requires_email_verification"] is True
+    assert "set-cookie" not in created.headers
+    assert len(delivered) == 1
+    old_token = _email_link_token(delivered[0][2], "verify_email")
+
+    login_before_verification = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "verifyreader", "password": "secure-example-pass-123"},
+    )
+    assert login_before_verification.status_code == 403
+    assert "verify your email" in login_before_verification.json()["detail"].lower()
+
+    resend = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "verify@example.com"},
+    )
+    assert resend.status_code == 202
+    assert len(delivered) == 2
+    new_token = _email_link_token(delivered[1][2], "verify_email")
+    assert old_token != new_token
+
+    stale = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": old_token})
+    assert stale.status_code == 400
+    verified = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": new_token})
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verified"] is True
+    assert verified.json()["user"]["email_verified"] is True
+
+    replay = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": new_token})
+    assert replay.status_code == 400
+    signed_in = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "verifyreader", "password": "secure-example-pass-123"},
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.json()["user"]["email_verified"] is True
+
+
+def test_password_reset_uses_single_use_token_and_revokes_all_sessions(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register(client, username="resetreader", email="reset@example.com")
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    delivered: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    request = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "reset@example.com"},
+    )
+    assert request.status_code == 202
+    assert len(delivered) == 1
+    token = _email_link_token(delivered[0][2], "reset_password")
+
+    missing = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert missing.status_code == 202
+    assert missing.json() == request.json()
+
+    updated = client.post(
+        "/api/auth/password-reset/confirm",
+        headers=ORIGIN,
+        json={"token": token, "password": "a-new-secure-password-456"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["reset"] is True
+    # The session created by register() must no longer authenticate after a reset.
+    assert client.get("/api/auth/me").json()["user"] is None
+
+    old_password = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "resetreader", "password": "secure-example-pass-123"},
+    )
+    assert old_password.status_code == 401
+    new_password = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "resetreader", "password": "a-new-secure-password-456"},
+    )
+    assert new_password.status_code == 200
+
+    replay = client.post(
+        "/api/auth/password-reset/confirm",
+        headers=ORIGIN,
+        json={"token": token, "password": "another-secure-password-789"},
+    )
+    assert replay.status_code == 400
+
+
+def test_verification_registration_fails_closed_without_smtp(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", False)
+    response = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "blockedreader", "email": "blocked@example.com", "password": "secure-example-pass-123"},
+    )
+    assert response.status_code == 503
+    assert "email delivery is not configured" in response.json()["detail"].lower()
