@@ -307,3 +307,12 @@ Date: 2026-10-18
 - The same run produced artifact `omnishelf-1.3.9-layout-previews`, including desktop/mobile profile shots, the sign-in recovery links, password-reset form, and connected cloud-sync screen. Artifact expires 2026-10-31.
 - The subsequent cleanup only removed temporary diagnostics from the browser test. Its new HEAD must have its own green check before merge.
 - The browser/API tests use a mocked mail sender; real SMTP delivery and trusted-origin settings are not yet validated in the hosted service. No live service, branch deployment, or hosted database was changed. The 1.3.9 PR remains a draft pending SMTP setup, database-target reconciliation, and launch review.
+
+
+## Recovery endpoint privacy hardening
+Date: 2026-10-18
+
+- Updated email-verification resend and password-reset requests so SMTP delivery errors do not change the public response. Known and unknown addresses now receive the same generic HTTP 202 response, removing a response-status/detail side channel that could disclose account existence.
+- Delivery failures produce fixed, non-sensitive warning messages; exception text, recipients, and email tokens are not written to the application log.
+- Added regression tests that simulate SMTP failures for both existing and nonexistent addresses and assert identical status codes and response bodies.
+- This is still an isolated feature-branch change. It has not been deployed to the 1.3.8 preview, and public registration remains disabled. The updated CI results and refreshed screenshot artifacts should be recorded only after the new branch HEAD passes.
