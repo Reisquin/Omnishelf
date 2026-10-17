@@ -298,3 +298,12 @@ Date: 2026-10-18
 - Added sign-in UI links for forgotten passwords and resending verification email, a reset-password form, email-link handling, API tests using a mocked mail sender, PostgreSQL integration coverage, and Playwright UI coverage. The build version and desktop/mobile screenshot artifact labels are 1.3.9.
 - Validation status at note creation: source and CI configuration committed on the feature branch, but CI has not yet been reported green. Do not call this release-ready until the pull-request checks and screenshot artifact succeed.
 - Remaining before any deployment: configure and test an SMTP sender in secret settings; verify the preview service's real Neon target instead of assuming it is the currently listed primary branch; reconcile migration target; retain public registration disabled; then complete backup-retention, independent security and provider/licensing reviews.
+
+
+## Validation follow-up — OmniShelf 1.3.9
+Date: 2026-10-18
+
+- GitHub Actions run [39072395285](https://github.com/Reisquin/Omnishelf/actions/runs/39072395285) passed all five jobs on revision `36cd170800141742f785f58379cc8452f71a5dad`: frontend/layout preview, isolated API tests, PostgreSQL integration tests, free deployment configuration, and fresh SQLite migration check.
+- The same run produced artifact `omnishelf-1.3.9-layout-previews`, including desktop/mobile profile shots, the sign-in recovery links, password-reset form, and connected cloud-sync screen. Artifact expires 2026-10-31.
+- The subsequent cleanup only removed temporary diagnostics from the browser test. Its new HEAD must have its own green check before merge.
+- The browser/API tests use a mocked mail sender; real SMTP delivery and trusted-origin settings are not yet validated in the hosted service. No live service, branch deployment, or hosted database was changed. The 1.3.9 PR remains a draft pending SMTP setup, database-target reconciliation, and launch review.
