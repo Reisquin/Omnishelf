@@ -74,11 +74,11 @@ def state_payload(title: str = "White Nights", expected_revision: int = 0) -> di
 def test_api_and_health_report_version_and_database(client: TestClient) -> None:
     api = client.get("/api")
     assert api.status_code == 200
-    assert api.json()["version"] == "1.3.8"
+    assert api.json()["version"] == "1.3.9"
 
     health = client.get("/healthz")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "database": "ok", "version": "1.3.8"}
+    assert health.json() == {"status": "ok", "database": "ok", "version": "1.3.9"}
     assert health.headers["x-content-type-options"] == "nosniff"
     assert health.headers["x-frame-options"] == "DENY"
 
@@ -285,11 +285,11 @@ def test_oversized_request_is_rejected_before_route_processing(client: TestClien
     assert response.json()["detail"] == "Request body is too large."
 
 
-def test_backend_serves_the_real_1358_frontend_shell(client: TestClient) -> None:
+def test_backend_serves_the_real_139_frontend_shell(client: TestClient) -> None:
     page = client.get("/")
     assert page.status_code == 200
     assert "text/html" in page.headers.get("content-type", "")
-    assert 'content="1.3.8"' in page.text
+    assert 'content="1.3.9"' in page.text
     assert "Every story has a place." in page.text
 
     api = client.get("/api")
