@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -37,6 +38,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session as DBSession, mapped_column, sessionmaker
 
 ROOT = Path(__file__).resolve().parents[1]
+LOGGER = logging.getLogger(__name__)
 load_dotenv(ROOT / ".env")
 COOKIE_NAME = "omnishelf_session"
 SESSION_TTL_SECONDS = max(600, int(os.getenv("SESSION_TTL_SECONDS", "2592000")))
@@ -636,7 +638,8 @@ def request_verification_email(payload: EmailAddressBody, request: Request, db: 
         try:
             _send_verification_email(request, user, token)
         except (smtplib.SMTPException, OSError, RuntimeError):
-            raise HTTPException(status_code=503, detail="The verification email could not be sent. Try again later.")
+            # Keep the response indistinguishable from an unknown email address.
+            LOGGER.warning("Verification email delivery failed.")
     return {"message": "If an unverified OmniShelf account uses that email, a verification link will arrive shortly."}
 
 
@@ -653,7 +656,8 @@ def request_password_reset(payload: EmailAddressBody, request: Request, db: DBSe
         try:
             _send_password_reset_email(request, user, token)
         except (smtplib.SMTPException, OSError, RuntimeError):
-            raise HTTPException(status_code=503, detail="The password-reset email could not be sent. Try again later.")
+            # Never reveal account existence through SMTP-dependent status or detail.
+            LOGGER.warning("Password-reset email delivery failed.")
     return {"message": "If a verified OmniShelf account uses that email, password-reset instructions will arrive shortly."}
 
 
