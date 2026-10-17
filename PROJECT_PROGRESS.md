@@ -335,3 +335,12 @@ Date: 2026-10-18
 - The feature branch has not been deployed. Real SMTP settings still require a mail provider sender/credentials in Render's private environment settings; no credentials were invented or written into source. Public registration stays disabled.
 - Database mapping remains unresolved: the 1.3.8 free service logs show Alembic revision 002 applied, while the Neon primary branch queried through the available account connection shows revision 001 and the isolated auth-staging branch shows revision 002. Render's available metadata does not reveal the secret database URL, so do not repoint services or apply migration 003 until an authorized in-service target check is available.
 - Independent security review, recurring backup-retention strategy, and provider/licensing review remain required before public launch.
+
+
+### SMTP transport gate — validation result
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39075898791](https://github.com/Reisquin/Omnishelf/actions/runs/39075898791), revision `519bda67621b98fca0e12d069300ff8f2fad21d6`; all five jobs passed after adding mocked SMTP STARTTLS/authentication tests and the SMTP acceptance checklist.
+- **Fresh layout artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117265981`, includes updated desktop/mobile and account recovery screens. The frontend itself was not changed in this documentation/test-only step.
+- This verifies transport behavior against a mocked SMTP client. It does not verify a real provider, credentials, sender-domain authentication, or delivery to a real mailbox. Those remain a deployment gate.
+- Existing hosted 1.3.8 services remain unchanged; migration 003 has not been applied to them.
