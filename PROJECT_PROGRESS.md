@@ -354,3 +354,12 @@ Date: 2026-10-18
 - This is a source/CI safeguard only. No Render environment variables, database targets, migrations, or hosted services were changed. The real SMTP-provider mailbox test and database-target reconciliation remain deployment blockers; public registration remains disabled.
 - Next: verify this branch revision's five CI jobs and regenerate the 1.3.9 screenshot artifact; then continue isolated staging acceptance without merging or changing the live preview.
 
+### Hosted email preflight — validation result
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39153980909](https://github.com/Reisquin/Omnishelf/actions/runs/39153980909) on the 1.3.9 feature branch. All five jobs passed: backend tests (including the new preflight tests), PostgreSQL integration tests, free-deployment configuration guard, Alembic migration check, and Playwright layout preview.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12145269780`, containing desktop, mobile, sign-in recovery, password-reset, and cloud-sync screenshots.
+- The preflight checks required setting presence, port bounds, HTTPS-origin structure, STARTTLS, verification, Secure cookies, and disabled registration; regression tests check it never prints configured values. It does not test SMTP connectivity or real message delivery.
+- Source remains isolated on `feature/1.3.9-email-verification-password-reset` and PR #1 remains a draft. No hosted service, production branch, environment variables, or database was changed. Migration 003 is not applied to hosted databases by this step.
+- Next gate remains real SMTP acceptance on a dedicated mailbox and a safe read-only reconciliation of the Render service's configured database target before any deployment. Keep public registration disabled.
+
