@@ -405,3 +405,16 @@ Date: 2026-10-18
 - PR #1 remains a draft on the isolated feature branch. No SMTP message was sent, no Render workspace/service was changed, and no hosted migration was run. Public registration is still disabled.
 - Next action requiring external configuration: select the intended Render workspace, confirm the approved Neon endpoint and database independently, configure those non-secret expected-target values plus SMTP credentials in an isolated staging service, run the explicit acceptance test to a controlled mailbox, then verify email-token replay and session revocation.
 
+## Isolated 1.3.9 Neon/Render staging preparation
+Date: 2026-10-18
+
+- Created a new Neon child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`) in project `omnishelf-preview`, parented to isolated `auth-staging-2026-10-16` rather than Neon `main`. It is a separate copy-on-write target; no hosted schema change has been applied yet.
+- A read-only SQL query against that branch confirmed database `neondb` and Alembic revision `002_shared_auth_rate_limits`.
+- Added `render.staging.yaml` defining a separate Free Render service that follows the 1.3.9 feature branch, pins the intended non-secret database hostname/name, enforces Secure cookies/email verification, keeps registration closed, disables the SMTP acceptance opt-in, and declares `DATABASE_URL` as `sync: false` so the privileged URI is supplied through Render's private initial Blueprint prompt rather than Git.
+- Added CI validation for this staging blueprint to ensure the service stays Free and isolated, the privileged database URL isn't committed, SMTP credentials/recipient aren't embedded, and registration/SMTP acceptance remain disabled.
+- Documented the custom Render Blueprint path workflow in README and the launch-gate checklist. Render permits custom Blueprint paths at initial creation; the correct secret-safe path is to select `render.staging.yaml` in Render and enter the Neon branch's pooled `neondb` URL directly into the Render secret prompt. Do not paste the URI into chat or source.
+- **Passed:** GitHub Actions run [39159269802](https://github.com/Reisquin/Omnishelf/actions/runs/39159269802), all five jobs on revision `6dbf05410cbf9b732197bcd8edf4e5de28a72624`: backend tests, PostgreSQL integration, migration check, deployment safety/blueprint validation, and Playwright screenshot capture.
+- **Fresh artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12148132903`, downloaded as `omnishelf-1.3.9-isolated-staging-previews.zip`.
+- A Render service inventory check confirmed no 1.3.9 service has been created yet; existing 1.3.8 services and the archived 1.0.0 service remain on their original branches. No real SMTP email was sent, no hosted migration was run, and public registration remains disabled.
+- **External configuration gate:** the new service must still be created from `render.staging.yaml` in the Render Dashboard and the privileged pooled URL pasted directly into its secret prompt. Then confirm the guard reports the correct endpoint and revision 002 and that migration 003 applies only on this isolated Neon child; configure SMTP credentials privately and perform real-mailbox acceptance before any rollout.
+
