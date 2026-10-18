@@ -344,3 +344,13 @@ Date: 2026-10-18
 - **Fresh layout artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117265981`, includes updated desktop/mobile and account recovery screens. The frontend itself was not changed in this documentation/test-only step.
 - This verifies transport behavior against a mocked SMTP client. It does not verify a real provider, credentials, sender-domain authentication, or delivery to a real mailbox. Those remain a deployment gate.
 - Existing hosted 1.3.8 services remain unchanged; migration 003 has not been applied to them.
+
+## Hosted email configuration preflight
+Date: 2026-10-18
+
+- Added `backend/config_preflight.py`, a no-network command that validates required SMTP settings, a valid SMTP port, HTTPS-only `PUBLIC_APP_ORIGIN`, STARTTLS, mandatory email verification, Secure cookies, and closed public registration.
+- The command `python -m backend.config_preflight` reports only setting names and policy failures; it never prints environment values. It explicitly says that SMTP connectivity and actual mailbox delivery are not tested.
+- Added `backend/tests/test_config_preflight.py` to cover valid hosted configuration, missing secret handling, unsafe flags/invalid origins, and protection against printing sensitive environment values. These tests are included in the existing backend test job.
+- This is a source/CI safeguard only. No Render environment variables, database targets, migrations, or hosted services were changed. The real SMTP-provider mailbox test and database-target reconciliation remain deployment blockers; public registration remains disabled.
+- Next: verify this branch revision's five CI jobs and regenerate the 1.3.9 screenshot artifact; then continue isolated staging acceptance without merging or changing the live preview.
+
