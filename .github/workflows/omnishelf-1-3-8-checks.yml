@@ -60,6 +60,7 @@ jobs:
           assert "EXPOSE 10000" in dockerfile, "Docker image must expose Render's default HTTP port 10000"
           assert "--host 0.0.0.0" in dockerfile, "Web server must bind to all interfaces"
           assert "--port ${PORT:-10000}" in dockerfile, "Web server port must default to 10000 and honor Render PORT"
+          assert dockerfile.index("python -m backend.database_target_preflight") < dockerfile.index("alembic -c backend/alembic.ini upgrade head"), "Hosted database target guard must run before migrations"
           backend = Path("backend/main.py").read_text()
           assert "OMNISHELF_STAGING_ACCEPTANCE_ENABLED" in backend
           assert "if STAGING_ACCEPTANCE_ENABLED:" in backend, "Staging hooks must be mounted conditionally"
