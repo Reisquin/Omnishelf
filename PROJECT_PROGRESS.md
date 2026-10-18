@@ -386,3 +386,12 @@ Date: 2026-10-18
 - This creates the capability to run an SMTP test once the service owner configures credentials and a mailbox; it does not claim live provider delivery has been tested. No email was sent and no Render environment/database/service was changed. Migration 003 remains unapplied to hosted services, PR #1 remains draft, and public registration remains disabled.
 - Next: after a controlled test mailbox and provider credentials are configured privately, execute the one-off SMTP acceptance check. Independently verify the intended Neon database endpoint and set expected target values before considering any hosted 1.3.9 deployment.
 
+## 1.3.9 release handoff documentation
+Date: 2026-10-18
+
+- Extended `backend/.env.example` with the two hosted database-target expectation variables and the SMTP acceptance opt-in/recipient settings, all blank/disabled by default so local development is unaffected.
+- Added a dedicated 1.3.9 release-gate section to `DEPLOYMENT_CHECKLIST.md`. It separates CI/source checks already passed from private configuration and real-world tests still outstanding, and says explicitly not to change the live 1.3.8 service as a shortcut.
+- Latest full source CI before this environment/checklist documentation update: [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165), all five jobs successful; the current docs/config revision has its own CI run queued at [39157696316](https://github.com/Reisquin/Omnishelf/actions/runs/39157696316).
+- No provider credentials have been added to source, no SMTP email has been sent, no Render service was changed, and no hosted database migration was run. Public registration remains disabled.
+- Next: verify the queued CI run and fresh screenshot artifact, then the remaining external gate requires selecting the intended Render workspace and configuring the isolated staging service with independently confirmed database target and SMTP credentials.
+
