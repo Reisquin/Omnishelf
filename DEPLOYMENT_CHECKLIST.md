@@ -45,3 +45,25 @@
 - [ ] Automated database backup and restore drill.
 - [ ] Independent security and provider/licensing review.
 - [ ] Enable registration only after all preceding items are complete.
+
+## 1.3.9 email and database release gates (feature branch only)
+
+### CI/source validation
+- [x] Email-verification and password-reset endpoints use one-time hashed tokens, expiries, rate limits, generic recovery responses, and revoke sessions after password reset.
+- [x] SMTP sending requires STARTTLS with certificate verification; delivery failure does not disclose whether the email belongs to an account.
+- [x] Hosted email configuration preflight reports missing/unsafe settings without printing values.
+- [x] Hosted database target preflight runs **before** Alembic migrations and blocks startup if the independently expected host/database is missing or does not match; successful target inspection is read-only.
+- [x] Explicit SMTP acceptance command requires an opt-in flag and a dedicated test-recipient setting; CI uses a mocked SMTP client and sends no real email.
+- [x] Latest full 1.3.9 code CI run before this checklist/environment documentation update: [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165) (five jobs passed, including PostgreSQL integration and visual previews).
+
+### Still blocked before deploying 1.3.9
+- [ ] Confirm the Render workspace and independently identify the intended Neon endpoint hostname and database name; do not infer them from an unverified connection string.
+- [ ] Add `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME` privately to the **intended 1.3.9 staging service**. Do not change the live 1.3.8 service as a shortcut.
+- [ ] Configure SMTP host, port, username, password, sender, HTTPS `PUBLIC_APP_ORIGIN`, and verification/Secure-cookie flags in that isolated service's private settings.
+- [ ] Choose a mailbox under the operator's control, then explicitly run `python -m backend.smtp_acceptance` with `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true` and `SMTP_TEST_RECIPIENT` configured only for that one-off acceptance check. Turn the opt-in flag off immediately afterwards and verify the mailbox itself.
+- [ ] Confirm the target preflight identifies the intended endpoint/database and current migration revision before approving migration 003.
+- [ ] Complete live verification/resend/reset/replay/session-revocation checks on staging with controlled accounts, then review screenshots.
+- [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
+
+**Safety status:** this is a feature-branch checklist only. No hosted database was migrated, no live Render service was changed, and public registration remains disabled.
+
