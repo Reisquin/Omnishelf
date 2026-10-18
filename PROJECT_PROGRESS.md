@@ -363,3 +363,14 @@ Date: 2026-10-18
 - Source remains isolated on `feature/1.3.9-email-verification-password-reset` and PR #1 remains a draft. No hosted service, production branch, environment variables, or database was changed. Migration 003 is not applied to hosted databases by this step.
 - Next gate remains real SMTP acceptance on a dedicated mailbox and a safe read-only reconciliation of the Render service's configured database target before any deployment. Keep public registration disabled.
 
+## Hosted database target guard
+Date: 2026-10-18
+
+- Added `backend/database_target_preflight.py`, a read-only pre-migration target check. On Render it requires `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME`, compares them to the non-secret target fields in `DATABASE_URL`, then queries the connected database name and currently applied Alembic revision.
+- Updated the Docker startup command to run the guard **before** `alembic upgrade head`. Missing/mismatched settings or a failed identity query stop startup before migrations run. Local development bypasses this hosted-only guard.
+- Diagnostics never print the connection URL, username, or password; mismatch output suppresses the actual connection target. On success, only the confirmed hostname, database name, and revision are shown.
+- Added tests for host/database mismatch rejection, no connection on a pre-connection mismatch, read-only revision identification, connected database mismatch, local-development skip, and secret non-disclosure. The deployment-configuration CI job now checks the ordering of the guard and Alembic command.
+- **Passed:** GitHub Actions run [39154625201](https://github.com/Reisquin/Omnishelf/actions/runs/39154625201) on source/docs revision `eb9b1605565bdf40dc71c8904a4130f9972e599b`; all five jobs passed.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12146960747`, containing desktop/mobile profile layouts and the account recovery/cloud-sync screens.
+- This change makes no hosted service/database changes and does not apply migration 003 anywhere. The PR remains a draft. Before any hosted deployment, independently confirm the intended Neon target and set the two expected-target values in the intended service's private settings; real SMTP delivery, backups/restore, independent security review, and provider/licensing review remain release blockers. Keep public registration disabled.
+
