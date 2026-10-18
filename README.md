@@ -43,7 +43,15 @@ Use a Docker web service with this branch and root `Dockerfile`, in the same reg
 
 The container runs Alembic migrations before starting Uvicorn. `/healthz` verifies DB connectivity. Do not expose DB credentials in logs, client code, commits or screenshots.
 
-### Hosted database target guard
+### Isolated 1.3.9 staging service
+
+`render.staging.yaml` is a separate Free-tier blueprint for the `omnishelf-1-3-9-email-recovery-staging` service and the dedicated Neon branch `omnishelf-1-3-9-email-recovery-staging`. It does not target the existing 1.3.8 services or Neon `main`. Public registration is disabled and SMTP acceptance stays off.
+
+To create the isolated service, open the Render Dashboard for the approved workspace and create a Blueprint linked to this repository and the `feature/1.3.9-email-verification-password-reset` branch; set **Blueprint Path** to `render.staging.yaml` (custom Blueprint paths are supported by Render; see the [Blueprint specification](https://render.com/docs/blueprint-spec)). During initial creation, Render will prompt for `DATABASE_URL` because the blueprint deliberately marks it `sync: false`. In the Neon console, select project `omnishelf-preview`, branch `omnishelf-1-3-9-email-recovery-staging`, database `neondb`, copy that branch's pooled connection URI, and paste it directly into Render's private prompt. Do not put the URI in Git, a ticket, or chat.
+
+On first startup, the container compares the target hostname/database with the expected values pinned in the blueprint, then reads the current database name and migration revision before running Alembic. The Neon child branch was read-only checked to start at `002_shared_auth_rate_limits`; migration 003 should apply only to this isolated child when the database guard passes. If startup blocks, stop and reconcile the target—do not re-point any existing service. The hosted SMTP settings remain intentionally unconfigured until a sender and controlled test mailbox are available.
+
+## Hosted database target guard
 
 Before a hosted container applies **any** Alembic migration, it now runs `python -m backend.database_target_preflight`. In Render, set `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME` in the service's private environment settings, using values independently confirmed for the intended Neon branch/database. The guard compares those values to the non-secret hostname/database name in `DATABASE_URL`, then performs read-only queries for `current_database()` and the applied Alembic revision. If the expected values are missing, do not match, or the identity query fails, startup stops **before migrations run**.
 
