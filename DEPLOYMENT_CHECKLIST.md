@@ -67,3 +67,14 @@
 
 **Safety status:** this is a feature-branch checklist only. No hosted database was migrated, no live Render service was changed, and public registration remains disabled.
 
+## Isolated Neon/Render staging target — preparation
+- [x] Created dedicated Neon child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`) from isolated `auth-staging-2026-10-16`, not Neon `main`.
+- [x] Read-only query confirmed the new branch's `neondb` database starts at `002_shared_auth_rate_limits`; migration 003 has not been applied yet.
+- [x] Added `render.staging.yaml` for a separate Free Render service on the 1.3.9 feature branch. It pins the expected non-secret database hostname/name, keeps registration closed, requires email verification and Secure cookies, and keeps SMTP acceptance disabled.
+- [x] Blueprint marks `DATABASE_URL` as `sync: false`; no database URI or password is committed to source.
+- [ ] Create the staging Render Blueprint from the Render dashboard, selecting custom blueprint path `render.staging.yaml`, then enter the new Neon branch's pooled `neondb` URI directly into Render's initial private secret prompt. Do not paste the URL into chat or a source file.
+- [ ] Confirm staging startup logs show the expected hostname/database and revision 002 before migration 003; verify migration 003 completes on this child branch only. If target check blocks startup, do not change existing service URLs.
+- [ ] Configure SMTP privately and perform the opt-in test against a controlled mailbox. No real SMTP message has been sent yet.
+
+**Current status:** the Neon branch and source blueprint are prepared; the Render staging service has not yet been created. The protected connection URI needs to be entered directly in Render's dashboard to avoid putting a privileged secret in the code workflow.
+
