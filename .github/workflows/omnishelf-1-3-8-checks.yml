@@ -99,6 +99,35 @@ jobs:
           assert not forbidden.intersection(env), "SMTP credentials and recipient must not be committed to the blueprint"
           print("Isolated 1.3.9 staging blueprint is Free, secret-safe, pinned to the dedicated Neon branch target, and keeps registration and SMTP acceptance disabled.")
           PY
+      - name: Validate isolated 1.3.9 staging blueprint
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          config = yaml.safe_load(Path("render.staging.yaml").read_text())
+          services = config.get("services", [])
+          assert len(services) == 1, f"Expected one staging service, got {len(services)}"
+          assert not config.get("databases"), "Staging must use the isolated Neon branch, not a new Render database"
+          service = services[0]
+          assert service["name"] == "omnishelf-1-3-9-email-recovery-staging"
+          assert service["type"] == "web" and service["runtime"] == "docker"
+          assert service["plan"] == "free"
+          assert service["region"] == "singapore"
+          assert service["branch"] == "feature/1.3.9-email-verification-password-reset"
+          assert service["healthCheckPath"] == "/healthz"
+          env = {item["key"]: item for item in service["envVars"]}
+          assert env["DATABASE_URL"].get("sync") is False, "The privileged database URI must remain dashboard-only"
+          assert env["OMNISHELF_EXPECTED_DATABASE_HOST"].get("value") == "ep-proud-scene-ao8eewxp-pooler.c-2.ap-southeast-1.aws.neon.tech"
+          assert env["OMNISHELF_EXPECTED_DATABASE_NAME"].get("value") == "neondb"
+          assert env["REGISTRATION_ENABLED"].get("value") == "false"
+          assert env["EMAIL_VERIFICATION_REQUIRED"].get("value") == "true"
+          assert env["COOKIE_SECURE"].get("value") == "true"
+          assert env["OMNISHELF_SMTP_ACCEPTANCE_ENABLED"].get("value") == "false"
+          forbidden = {"SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_HOST", "SMTP_FROM_EMAIL", "SMTP_TEST_RECIPIENT"}
+          assert not forbidden.intersection(env), "SMTP credentials and recipient must not be committed to the blueprint"
+          print("Isolated 1.3.9 staging blueprint is Free, secret-safe, pinned to the dedicated Neon branch target, and keeps registration and SMTP acceptance disabled.")
+          PY
   backend-tests:
     runs-on: ubuntu-latest
     steps:
