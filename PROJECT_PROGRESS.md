@@ -374,3 +374,15 @@ Date: 2026-10-18
 - **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12146960747`, containing desktop/mobile profile layouts and the account recovery/cloud-sync screens.
 - This change makes no hosted service/database changes and does not apply migration 003 anywhere. The PR remains a draft. Before any hosted deployment, independently confirm the intended Neon target and set the two expected-target values in the intended service's private settings; real SMTP delivery, backups/restore, independent security review, and provider/licensing review remain release blockers. Keep public registration disabled.
 
+## Explicit SMTP delivery acceptance tool
+Date: 2026-10-18
+
+- Added `backend/smtp_acceptance.py`, an operator-invoked one-off email-delivery check. It requires `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true` and an explicit `SMTP_TEST_RECIPIENT` in addition to the verified hosted email/security settings; it does not run at application startup.
+- The script uses certificate-validated STARTTLS, authenticates with configured SMTP credentials, and sends one plain acceptance message with no account token or password. It reports only whether the SMTP server accepted the mail and reminds the operator to check the dedicated mailbox, including spam/quarantine.
+- Provider/OS exception details and credential values are suppressed. Missing opt-in, invalid recipient, invalid security flags, or STARTTLS disabled prevent connection; CI uses a mocked SMTP transport and sends no actual mail.
+- Added `backend/tests/test_smtp_acceptance.py` for the explicit opt-in gate, recipient validation, TLS/auth/send behavior, no secret leakage, and rejection when STARTTLS is disabled. README now documents the one-off controlled usage and warns against leaving the opt-in flag enabled.
+- **Passed:** GitHub Actions run [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165) on source/docs revision `1c53ade6c9b87649f3bcea3cd292ba0003071914`; all five jobs passed, including backend tests, PostgreSQL integration, migration checks, deployment guard, and visual preview generation.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12146208465`, with desktop, mobile, sign-in recovery, password reset, and cloud-sync screenshots.
+- This creates the capability to run an SMTP test once the service owner configures credentials and a mailbox; it does not claim live provider delivery has been tested. No email was sent and no Render environment/database/service was changed. Migration 003 remains unapplied to hosted services, PR #1 remains draft, and public registration remains disabled.
+- Next: after a controlled test mailbox and provider credentials are configured privately, execute the one-off SMTP acceptance check. Independently verify the intended Neon database endpoint and set expected target values before considering any hosted 1.3.9 deployment.
+
