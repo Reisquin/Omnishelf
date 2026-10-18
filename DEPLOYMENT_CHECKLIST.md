@@ -78,3 +78,15 @@
 
 **Current status:** the Neon branch and source blueprint are prepared; the Render staging service has not yet been created. The protected connection URI needs to be entered directly in Render's dashboard to avoid putting a privileged secret in the code workflow.
 
+## Render 1.3.9 staging service — current runtime result
+- [x] Created Free Render web service `omnishelf-1-3-9-email-recovery-staging`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
+- [x] The Docker image built successfully from the 1.3.9 feature branch; source commit: `575fedb61e68d821f4b09c5aa2229771bd68c812`.
+- [x] The first start exited closed with the diagnostic `Missing required setting: DATABASE_URL`. The preflight stopped startup before Alembic, so no database migration ran. This is intentional until the secret is supplied directly through Render's private dashboard.
+- [x] Read-only Neon check after that deployment failure still reports `neondb` at `002_shared_auth_rate_limits`; migration 003 remains unapplied to the isolated staging branch.
+- [ ] In Render Dashboard → service → Environment, add `DATABASE_URL` by copying the pooled URI for Neon project `omnishelf-preview`, branch `omnishelf-1-3-9-email-recovery-staging`, database `neondb`. Paste directly into Render; do not send it in chat or source control. Saving should restart/redeploy the service.
+- [ ] After startup, verify logs show the expected target hostname, `database=neondb`, and revision 002 before Alembic then applies migration 003. Read-only Neon query must show `003_email_verification_and_reset` afterwards.
+- [ ] Configure SMTP credentials privately and run the explicit one-off acceptance command only with a mailbox under the operator's control. SMTP acceptance remains disabled and no real email has been sent.
+- [ ] Set Render's native health check path to `/healthz` in the service settings; the create-service API did not expose that field, although the source blueprint specifies it.
+
+**No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled.
+
