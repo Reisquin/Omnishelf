@@ -51,6 +51,16 @@ The API now supports one-time email verification, resending a verification messa
 
 Email verification links expire after 24 hours by default; password-reset links expire after 30 minutes. Tokens are random, single-use, and stored only as hashes. Password recovery revokes all active sessions. SMTP authentication is refused when STARTTLS is disabled. If the sender is missing, signup/recovery endpoints fail closed with HTTP 503; public registration remains disabled in the deployed preview. Existing accounts are grandfathered as verified by migration 003.
 
+## Hosted email preflight (configuration only)
+
+After adding the intended hosted environment variables in the service's private settings, run this command from the deployed code or a secure shell attached to that service:
+
+```bash
+python -m backend.config_preflight
+```
+
+The preflight checks that required SMTP settings are present, the SMTP port is valid, STARTTLS/email verification/Secure cookies are enabled, public registration remains disabled, and `PUBLIC_APP_ORIGIN` is an HTTPS origin. It prints only setting names and validation messages, never configured values. It **does not** contact the SMTP server, prove sender-domain ownership, or verify real mailbox delivery; the acceptance checklist below remains required.
+
 ## SMTP acceptance checklist
 
 Do not put SMTP credentials in GitHub source files, workflow YAML, issue comments, or screenshots. Add them only to the intended Render service's private environment settings. Then verify delivery against a dedicated test mailbox before any production cutover:
