@@ -395,3 +395,13 @@ Date: 2026-10-18
 - No provider credentials have been added to source, no SMTP email has been sent, no Render service was changed, and no hosted database migration was run. Public registration remains disabled.
 - Next: verify the queued CI run and fresh screenshot artifact, then the remaining external gate requires selecting the intended Render workspace and configuring the isolated staging service with independently confirmed database target and SMTP credentials.
 
+### Release handoff documentation — validation result
+Date: 2026-10-18
+
+- Updated `backend/.env.example` to show the hosted database-target expectation variables and disabled-by-default SMTP acceptance opt-in / recipient settings. Values remain blank/disabled; no secrets were added.
+- Added a 1.3.9 section to `DEPLOYMENT_CHECKLIST.md` covering source/CI gates, private staging configuration, a dedicated SMTP test mailbox, the required database revision check, and remaining launch reviews.
+- **Passed:** final CI run for the environment/checklist changes [39157696316](https://github.com/Reisquin/Omnishelf/actions/runs/39157696316), all five jobs successful: backend tests, PostgreSQL integration, migration check, deployment config validation, and visual preview generation.
+- **Fresh artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12147926117`, packaged as `omnishelf-1.3.9-release-gate-previews.zip`.
+- PR #1 remains a draft on the isolated feature branch. No SMTP message was sent, no Render workspace/service was changed, and no hosted migration was run. Public registration is still disabled.
+- Next action requiring external configuration: select the intended Render workspace, confirm the approved Neon endpoint and database independently, configure those non-secret expected-target values plus SMTP credentials in an isolated staging service, run the explicit acceptance test to a controlled mailbox, then verify email-token replay and session revocation.
+
