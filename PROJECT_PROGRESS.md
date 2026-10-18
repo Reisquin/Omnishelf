@@ -418,3 +418,15 @@ Date: 2026-10-18
 - A Render service inventory check confirmed no 1.3.9 service has been created yet; existing 1.3.8 services and the archived 1.0.0 service remain on their original branches. No real SMTP email was sent, no hosted migration was run, and public registration remains disabled.
 - **External configuration gate:** the new service must still be created from `render.staging.yaml` in the Render Dashboard and the privileged pooled URL pasted directly into its secret prompt. Then confirm the guard reports the correct endpoint and revision 002 and that migration 003 applies only on this isolated Neon child; configure SMTP credentials privately and perform real-mailbox acceptance before any rollout.
 
+## 1.3.9 isolated Render staging — first deployment attempt
+Date: 2026-10-18
+
+- Created Free Render service `omnishelf-1-3-9-email-recovery-staging` (service ID `srv-dbaib6eq1p3s73bpmsig`) on branch `feature/1.3.9-email-verification-password-reset`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com. Existing 1.3.8 services and the archived 1.0.0 service remain on their original branches.
+- The first Docker build succeeded. Startup then exited with the intended fail-closed diagnostic `Missing required setting: DATABASE_URL`; the database target preflight ran before Alembic and stopped startup before any database change.
+- Rechecked the isolated Neon branch with a read-only SQL query after the failed startup: database `neondb` still reports revision `002_shared_auth_rate_limits`. Migration 003 was not applied.
+- The service does not yet have a running app until its pooled `DATABASE_URL` is copied directly from the Neon Console for branch `omnishelf-1-3-9-email-recovery-staging` into the Render dashboard's private Environment setting. Do not send this URI in chat or add it to source control. The required host/database expectations are already set on the service.
+- Added runtime status to README and `DEPLOYMENT_CHECKLIST.md`. Render's service-creation API did not expose the native health-check field; set `/healthz` in Render dashboard once the Environment setting is configured.
+- No SMTP credentials are configured and no real email has been sent. Registration remains disabled and SMTP acceptance remains off.
+- Latest CI that validated source before this service creation: [run 39159269802](https://github.com/Reisquin/Omnishelf/actions/runs/39159269802), all five jobs green; README/checklist now contain status-only edits and will receive a fresh validation run.
+- Next: add `DATABASE_URL` directly in Render, confirm logged identity/revision 002, verify Alembic advances only this branch to `003_email_verification_and_reset`, then configure the SMTP provider and complete the controlled mailbox acceptance checks.
+
