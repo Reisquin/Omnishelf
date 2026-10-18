@@ -69,6 +69,18 @@ python -m backend.config_preflight
 
 The preflight checks that required SMTP settings are present, the SMTP port is valid, STARTTLS/email verification/Secure cookies are enabled, public registration remains disabled, and `PUBLIC_APP_ORIGIN` is an HTTPS origin. It prints only setting names and validation messages, never configured values. It **does not** contact the SMTP server, prove sender-domain ownership, or verify real mailbox delivery; the acceptance checklist below remains required.
 
+## Explicit SMTP delivery acceptance
+
+When credentials have been added to the intended private service environment, use a dedicated test mailbox and run this one-off command from an authorized shell. The opt-in flag is deliberately required so the command cannot accidentally send during app startup or normal CI:
+
+```bash
+OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true \
+SMTP_TEST_RECIPIENT=your-controlled-mailbox@example.com \
+python -m backend.smtp_acceptance
+```
+
+The command re-checks the required hosted configuration, validates the recipient, connects with certificate-validated STARTTLS, authenticates, and sends one harmless test message to the explicitly specified recipient. It never includes an account token/password, and it does not print credential values or SMTP exception details. It reports only whether the SMTP server accepted the message; **open the dedicated mailbox** (including spam/quarantine) to confirm delivery. Do not leave the opt-in flag enabled persistently and do not run the command until the recipient is confirmed to be a mailbox you control.
+
 ## SMTP acceptance checklist
 
 Do not put SMTP credentials in GitHub source files, workflow YAML, issue comments, or screenshots. Add them only to the intended Render service's private environment settings. Then verify delivery against a dedicated test mailbox before any production cutover:
