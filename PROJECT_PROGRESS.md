@@ -430,3 +430,13 @@ Date: 2026-10-18
 - Latest CI that validated source before this service creation: [run 39159269802](https://github.com/Reisquin/Omnishelf/actions/runs/39159269802), all five jobs green; README/checklist now contain status-only edits and will receive a fresh validation run.
 - Next: add `DATABASE_URL` directly in Render, confirm logged identity/revision 002, verify Alembic advances only this branch to `003_email_verification_and_reset`, then configure the SMTP provider and complete the controlled mailbox acceptance checks.
 
+### 1.3.9 staging launch guard — final validation
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39161561114](https://github.com/Reisquin/Omnishelf/actions/runs/39161561114) on revision `ae866a1fd3000e05fdc406380267e6bff3e8e71c`. All five jobs passed, including the staging-blueprint safety assertion, API tests, PostgreSQL integration, migrations, and screenshot capture.
+- **Fresh visual previews:** artifact `omnishelf-1.3.9-layout-previews`, ID `12149245954`; downloaded to `omnishelf-1.3.9-staging-runtime-previews.zip` and extracted to `/mnt/data/omnishelf_139_staging_runtime_previews/`.
+- Runtime test result: the Render build completed; startup was stopped by the target guard because the private `DATABASE_URL` is missing. Log says `Missing required setting: DATABASE_URL`. No Alembic command ran.
+- Follow-up read-only Neon query still confirms `neondb` at `002_shared_auth_rate_limits`; migration 003 remains unapplied to the isolated child branch.
+- The isolated staging service currently exists on the Free plan but is not serving the app until the database URL is pasted directly into Render's private Environment page. Set Render's native health-check path to `/healthz` there as well.
+- Public registration remains disabled, SMTP acceptance remains disabled, no real mail was sent, and the 1.3.8 and 1.0.0 services remain untouched. After the dashboard-only URL/health-check setup, verify revision 002 is logged before migration 003 succeeds, then move to controlled SMTP and account-flow acceptance.
+
