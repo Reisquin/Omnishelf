@@ -36,10 +36,18 @@ Use a Docker web service with this branch and root `Dockerfile`, in the same reg
 - `REGISTRATION_ENABLED=false` until email delivery, account recovery, abuse protections, backups and independent review are complete
 - `EMAIL_VERIFICATION_REQUIRED=true`
 - `PUBLIC_APP_ORIGIN=https://your-real-app-host`
+- `OMNISHELF_EXPECTED_DATABASE_HOST` — the exact hostname of the approved database endpoint
+- `OMNISHELF_EXPECTED_DATABASE_NAME` — the exact database name for the approved target
 - `SESSION_TTL_SECONDS=2592000`
 - `MAX_STATE_BYTES=20971520`
 
 The container runs Alembic migrations before starting Uvicorn. `/healthz` verifies DB connectivity. Do not expose DB credentials in logs, client code, commits or screenshots.
+
+### Hosted database target guard
+
+Before a hosted container applies **any** Alembic migration, it now runs `python -m backend.database_target_preflight`. In Render, set `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME` in the service's private environment settings, using values independently confirmed for the intended Neon branch/database. The guard compares those values to the non-secret hostname/database name in `DATABASE_URL`, then performs read-only queries for `current_database()` and the applied Alembic revision. If the expected values are missing, do not match, or the identity query fails, startup stops **before migrations run**.
+
+On success it reports only the verified host, database name, and current Alembic revision—not the connection URL, username, or password. Never paste `DATABASE_URL` into chat or logs. The check does not change schema or data. Local development skips this hosted-only guard. This safeguard is only as trustworthy as the independently confirmed expected target; do not copy expected values from an unverified connection string.
 
 ## Account email setup
 
