@@ -1,6 +1,6 @@
 # OmniShelf 1.3.9 — Account Recovery Preview
 
-This feature branch extends the 1.3.8 single-page frontend and FastAPI persistence foundation with email verification and password recovery. It is not deployed. The existing 1.3.8 HTTPS preview remains unchanged until review, database-target reconciliation and email-provider configuration are complete.
+This feature branch extends the 1.3.8 single-page frontend and FastAPI persistence foundation with email verification and password recovery. It is deployed to an isolated Free Render staging service for controlled acceptance only; it is not a public release. The existing 1.3.8 HTTPS preview and archived 1.0.0 service remain unchanged.
 
 ## What is included
 
@@ -43,26 +43,33 @@ Use a Docker web service with this branch and root `Dockerfile`, in the same reg
 
 The container runs Alembic migrations before starting Uvicorn. `/healthz` verifies DB connectivity. Do not expose DB credentials in logs, client code, commits or screenshots.
 
-### Isolated 1.3.9 staging service
+### Isolated 1.3.9 staging service — current verified status
 
-A separate Free Render service now exists at https://omnishelf-1-3-9-email-recovery-staging.onrender.com and uses the `feature/1.3.9-email-verification-password-reset` branch. It is separate from the original 1.3.8 preview and the 1.0.0 service. Its Docker image built, but the first runtime start correctly stopped before migrations because the privileged `DATABASE_URL` has not yet been entered.
+The separate Free Render service is live at https://omnishelf-1-3-9-email-recovery-staging.onrender.com and deploys from `feature/1.3.9-email-verification-password-reset`. It is isolated from the 1.3.8 preview and archived 1.0.0 service.
 
-The dedicated Neon child branch is `omnishelf-1-3-9-email-recovery-staging` in project `omnishelf-preview`, database `neondb`. A read-only query confirmed it starts at Alembic revision `002_shared_auth_rate_limits`. Migration 003 is not applied yet.
+- The private `DATABASE_URL` was entered directly in Render for Neon project `omnishelf-preview` → branch `omnishelf-1-3-9-email-recovery-staging` → database `neondb`; no connection URI is stored in source or chat.
+- The hosted target guard verified the intended non-secret host and database name before migrations.
+- The isolated database now reports Alembic revision `003_email_verification_and_reset`. This migration has **not** been applied to Neon `main`.
+- Render's native health check is configured to `/healthz`; logs show HTTP 200 responses and a successful deployment.
+- Public registration remains disabled. SMTP acceptance remains disabled, no real email has been sent, and the existing 1.3.8 and 1.0.0 services remain unchanged.
 
-### Required next action in Render Dashboard
+### Next gate — SMTP provider and real-mailbox acceptance
 
-1. Open the [1.3.9 staging service settings](https://dashboard.render.com/web/srv-dbaib6eq1p3s73bpmsig) and choose **Environment**.
-2. Add `DATABASE_URL` using the pooled connection URI for Neon project `omnishelf-preview` → branch `omnishelf-1-3-9-email-recovery-staging` → database `neondb`. Copy it from the Neon Console and paste it **directly into Render**; do not put the URI in Git, chat, tickets, or logs. Saving the setting should restart the service.
-3. Confirm startup logs report the expected hostname/database and current revision 002, followed by migration 003 completing. If the target guard blocks startup, stop and reconcile settings—do not change either of the existing 1.3.8 service URLs.
-4. Set Render's native health check path to `/healthz`; the create-service API used for initial creation did not expose this setting, although `render.staging.yaml` specifies it.
+Recommended low-friction provider: [Resend](https://resend.com/), which supports SMTP and currently lists a free tier of 3,000 emails/month, with a 100/day limit. Check its [current pricing](https://resend.com/pricing) before relying on those limits. A verified sending domain is required for normal use; don't purchase a domain or upgrade to a paid plan without deciding that separately. See [Resend's SMTP setup](https://resend.com/changelog/smtp-service).
 
-Registration remains disabled and SMTP acceptance remains off. Real SMTP provider credentials and a controlled mailbox still need to be configured privately; no real email has been sent.
+For a Resend SMTP integration compatible with OmniShelf's STARTTLS configuration, use:
 
-## Hosted database target guard
+- `SMTP_HOST=smtp.resend.com`
+- `SMTP_PORT=587`
+- `SMTP_USERNAME=resend`
+- `SMTP_PASSWORD`: a Resend API key with sending permission (private secret)
+- `SMTP_FROM_EMAIL`: a sender address under a verified domain
+- `SMTP_FROM_NAME=OmniShelf`
+- `SMTP_STARTTLS=true`
 
-Before a hosted container applies **any** Alembic migration, it now runs `python -m backend.database_target_preflight`. In Render, set `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME` in the service's private environment settings, using values independently confirmed for the intended Neon branch/database. The guard compares those values to the non-secret hostname/database name in `DATABASE_URL`, then performs read-only queries for `current_database()` and the applied Alembic revision. If the expected values are missing, do not match, or the identity query fails, startup stops **before migrations run**.
+Keep `EMAIL_VERIFICATION_REQUIRED=true`, `COOKIE_SECURE=true`, `REGISTRATION_ENABLED=false`, and `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false` outside the explicit one-off test. `PUBLIC_APP_ORIGIN` must remain the exact HTTPS staging origin.
 
-On success it reports only the verified host, database name, and current Alembic revision—not the connection URL, username, or password. Never paste `DATABASE_URL` into chat or logs. The check does not change schema or data. Local development skips this hosted-only guard. This safeguard is only as trustworthy as the independently confirmed expected target; do not copy expected values from an unverified connection string.
+Enter the SMTP values only through Render's private Environment settings. Never send the API key in chat or commit it to Git. Once the sender domain is verified and credentials are saved, run the configuration preflight and then perform exactly one opt-in acceptance message to a mailbox you control. Immediately switch the acceptance flag back off and verify the message in Inbox/Spam. Only then proceed to verification, resend, reset, token-replay, generic-response, and session-revocation checks. Do not enable public registration during staging acceptance.
 
 ## Account email setup
 
