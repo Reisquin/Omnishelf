@@ -66,7 +66,9 @@
 - [ ] Configure SMTP host, port, sending username, password/API key, verified sender address, and HTTPS origin in the isolated service's private settings. Never store provider credentials in Git or chat.
 - [ ] Run the hosted email configuration preflight without printing values.
 - [ ] Run the opt-in SMTP delivery acceptance test exactly once to a confirmed mailbox under the operator's control; disable the opt-in flag immediately afterwards and verify actual inbox/spam delivery.
-- [ ] Verify/resend/password-reset flows, single-use token replay prevention, generic response behavior, and session revocation against controlled staging accounts.
+- [x] Live OIDC-protected staging acceptance passed: Secure/HttpOnly/SameSite session cookies; public registration denied; concurrent first writes serialize to one success/one conflict; stale revision cannot overwrite saved state; snapshot persists across logout/sign-in; two-account data is isolated; export excludes password/session secrets; account deletion requires the correct password and revokes all sessions. [Run 39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200).
+- [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; Render redeployment is closing those test-only routes.
+- [ ] Verify email verification/resend/password-reset flows, one-time token replay prevention, generic responses on unknown-address/SMTP-failure cases, and post-reset session revocation after real SMTP delivery is configured.
 - [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
 
 **Current safety status:** the isolated 1.3.9 staging service is live and migrated, but this is not a public release. Public registration remains disabled, SMTP acceptance remains off, and no real SMTP email has been sent. The existing 1.3.8 preview and archived 1.0.0 service remain unchanged.
@@ -80,8 +82,8 @@
 - [x] Independent read-only Neon query confirms `neondb` at `003_email_verification_and_reset`; migration 003 was applied to the isolated child branch only.
 - [x] Render native health-check setting is `/healthz`; the service is live and Render logs show `GET /healthz` returning HTTP 200.
 - [x] Staging blueprint keeps the free plan, registration disabled, email verification required, Secure cookies enabled, and SMTP acceptance disabled by default.
-- [ ] SMTP provider credentials and a verified sender address are still required. Recommended path documented in README: Resend SMTP using STARTTLS on port 587. Use a domain you control; do not purchase a domain or upgrade a provider plan without deciding that separately.
-- [ ] Run configuration preflight and explicit opt-in single-message SMTP acceptance to a mailbox under the operator's control; disable the acceptance flag and verify actual delivery.
+- [ ] SMTP provider account/API key and verified sender address are still required. Non-secret Resend SMTP settings (host, port 587, username `resend`, STARTTLS, and sender name) are configured. Add `SMTP_PASSWORD` (sending API key) and `SMTP_FROM_EMAIL` privately in Render. Use a domain you control; do not purchase a domain or upgrade a provider plan without deciding that separately.
+- [ ] Run configuration preflight and explicit opt-in single-message SMTP acceptance to a mailbox under the operator's control; disable the acceptance flag immediately afterwards and verify actual delivery.
 - [ ] Complete controlled account-flow acceptance for verification/resend/reset/token replay/session revocation after mail delivery works.
 
 **No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled until the remaining review and operations gates are complete.
