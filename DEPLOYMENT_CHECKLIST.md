@@ -56,37 +56,32 @@
 - [x] Explicit SMTP acceptance command requires an opt-in flag and a dedicated test-recipient setting; CI uses a mocked SMTP client and sends no real email.
 - [x] Latest full 1.3.9 code CI run before this checklist/environment documentation update: [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165) (five jobs passed, including PostgreSQL integration and visual previews).
 
-### Still blocked before deploying 1.3.9
-- [ ] Confirm the Render workspace and independently identify the intended Neon endpoint hostname and database name; do not infer them from an unverified connection string.
-- [ ] Add `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME` privately to the **intended 1.3.9 staging service**. Do not change the live 1.3.8 service as a shortcut.
-- [ ] Configure SMTP host, port, username, password, sender, HTTPS `PUBLIC_APP_ORIGIN`, and verification/Secure-cookie flags in that isolated service's private settings.
-- [ ] Choose a mailbox under the operator's control, then explicitly run `python -m backend.smtp_acceptance` with `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true` and `SMTP_TEST_RECIPIENT` configured only for that one-off acceptance check. Turn the opt-in flag off immediately afterwards and verify the mailbox itself.
-- [ ] Confirm the target preflight identifies the intended endpoint/database and current migration revision before approving migration 003.
-- [ ] Complete live verification/resend/reset/replay/session-revocation checks on staging with controlled accounts, then review screenshots.
+### Current 1.3.9 release gates
+
+- [x] Confirm the intended Render workspace and isolate the Neon child branch `omnishelf-1-3-9-email-recovery-staging`, database `neondb`.
+- [x] Add the expected database host/name guard and private `DATABASE_URL` to the isolated Render staging service.
+- [x] Confirm the hosted target guard identified the intended endpoint and database before migration.
+- [x] Apply migration `003_email_verification_and_reset` only to the isolated staging branch; read-only Neon query confirms the new Alembic revision.
+- [x] Set Render's native health-check path to `/healthz`; latest logs show HTTP 200 health checks and a successful deploy.
+- [ ] Configure SMTP host, port, sending username, password/API key, verified sender address, and HTTPS origin in the isolated service's private settings. Never store provider credentials in Git or chat.
+- [ ] Run the hosted email configuration preflight without printing values.
+- [ ] Run the opt-in SMTP delivery acceptance test exactly once to a confirmed mailbox under the operator's control; disable the opt-in flag immediately afterwards and verify actual inbox/spam delivery.
+- [ ] Verify/resend/password-reset flows, single-use token replay prevention, generic response behavior, and session revocation against controlled staging accounts.
 - [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
 
-**Safety status:** this is a feature-branch checklist only. No hosted database was migrated, no live Render service was changed, and public registration remains disabled.
+**Current safety status:** the isolated 1.3.9 staging service is live and migrated, but this is not a public release. Public registration remains disabled, SMTP acceptance remains off, and no real SMTP email has been sent. The existing 1.3.8 preview and archived 1.0.0 service remain unchanged.
 
-## Isolated Neon/Render staging target — preparation
-- [x] Created dedicated Neon child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`) from isolated `auth-staging-2026-10-16`, not Neon `main`.
-- [x] Read-only query confirmed the new branch's `neondb` database starts at `002_shared_auth_rate_limits`; migration 003 has not been applied yet.
-- [x] Added `render.staging.yaml` for a separate Free Render service on the 1.3.9 feature branch. It pins the expected non-secret database hostname/name, keeps registration closed, requires email verification and Secure cookies, and keeps SMTP acceptance disabled.
-- [x] Blueprint marks `DATABASE_URL` as `sync: false`; no database URI or password is committed to source.
-- [ ] Create the staging Render Blueprint from the Render dashboard, selecting custom blueprint path `render.staging.yaml`, then enter the new Neon branch's pooled `neondb` URI directly into Render's initial private secret prompt. Do not paste the URL into chat or a source file.
-- [ ] Confirm staging startup logs show the expected hostname/database and revision 002 before migration 003; verify migration 003 completes on this child branch only. If target check blocks startup, do not change existing service URLs.
-- [ ] Configure SMTP privately and perform the opt-in test against a controlled mailbox. No real SMTP message has been sent yet.
+## Isolated Neon/Render staging target — verified deployment
 
-**Current status:** the Neon branch and source blueprint are prepared; the Render staging service has not yet been created. The protected connection URI needs to be entered directly in Render's dashboard to avoid putting a privileged secret in the code workflow.
+- [x] Created Neon project `omnishelf-preview` with dedicated child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`), not Neon `main`.
+- [x] Created Free Render web service `omnishelf-1-3-9-email-recovery-staging` (`srv-dbaib6eq1p3s73bpmsig`) on `feature/1.3.9-email-verification-password-reset`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
+- [x] Added the pooled Neon connection URI directly in Render's private environment. The URI/password do not appear in Git, logs, or chat.
+- [x] The pre-migration target check confirmed the expected hostname and `neondb`; only then did Alembic upgrade `002_shared_auth_rate_limits` to `003_email_verification_and_reset`.
+- [x] Independent read-only Neon query confirms `neondb` at `003_email_verification_and_reset`; migration 003 was applied to the isolated child branch only.
+- [x] Render native health-check setting is `/healthz`; the service is live and Render logs show `GET /healthz` returning HTTP 200.
+- [x] Staging blueprint keeps the free plan, registration disabled, email verification required, Secure cookies enabled, and SMTP acceptance disabled by default.
+- [ ] SMTP provider credentials and a verified sender address are still required. Recommended path documented in README: Resend SMTP using STARTTLS on port 587. Use a domain you control; do not purchase a domain or upgrade a provider plan without deciding that separately.
+- [ ] Run configuration preflight and explicit opt-in single-message SMTP acceptance to a mailbox under the operator's control; disable the acceptance flag and verify actual delivery.
+- [ ] Complete controlled account-flow acceptance for verification/resend/reset/token replay/session revocation after mail delivery works.
 
-## Render 1.3.9 staging service — current runtime result
-- [x] Created Free Render web service `omnishelf-1-3-9-email-recovery-staging`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
-- [x] The Docker image built successfully from the 1.3.9 feature branch; source commit: `575fedb61e68d821f4b09c5aa2229771bd68c812`.
-- [x] The first start exited closed with the diagnostic `Missing required setting: DATABASE_URL`. The preflight stopped startup before Alembic, so no database migration ran. This is intentional until the secret is supplied directly through Render's private dashboard.
-- [x] Read-only Neon check after that deployment failure still reports `neondb` at `002_shared_auth_rate_limits`; migration 003 remains unapplied to the isolated staging branch.
-- [ ] In Render Dashboard → service → Environment, add `DATABASE_URL` by copying the pooled URI for Neon project `omnishelf-preview`, branch `omnishelf-1-3-9-email-recovery-staging`, database `neondb`. Paste directly into Render; do not send it in chat or source control. Saving should restart/redeploy the service.
-- [ ] After startup, verify logs show the expected target hostname, `database=neondb`, and revision 002 before Alembic then applies migration 003. Read-only Neon query must show `003_email_verification_and_reset` afterwards.
-- [ ] Configure SMTP credentials privately and run the explicit one-off acceptance command only with a mailbox under the operator's control. SMTP acceptance remains disabled and no real email has been sent.
-- [ ] Set Render's native health check path to `/healthz` in the service settings; the create-service API did not expose that field, although the source blueprint specifies it.
-
-**No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled.
-
+**No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled until the remaining review and operations gates are complete.
