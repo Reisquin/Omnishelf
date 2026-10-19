@@ -95,6 +95,10 @@ jobs:
           assert env["EMAIL_VERIFICATION_REQUIRED"].get("value") == "true"
           assert env["COOKIE_SECURE"].get("value") == "true"
           assert env["OMNISHELF_SMTP_ACCEPTANCE_ENABLED"].get("value") == "false"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_ENABLED"].get("value") == "false", "OIDC-authenticated staging account hooks must be off by default"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_ORIGIN"].get("value") == "https://omnishelf-1-3-9-email-recovery-staging.onrender.com"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_REF"].get("value") == "refs/heads/feature/1.3.9-email-verification-password-reset"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_WORKFLOW_REF"].get("value") == "Reisquin/Omnishelf/.github/workflows/omnishelf-1-3-9-live-smoke.yml@refs/heads/feature/1.3.9-email-verification-password-reset"
           forbidden = {"SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_HOST", "SMTP_FROM_EMAIL", "SMTP_TEST_RECIPIENT"}
           assert not forbidden.intersection(env), "SMTP credentials and recipient must not be committed to the blueprint"
           print("Isolated 1.3.9 staging blueprint is Free, secret-safe, pinned to the dedicated Neon branch target, and keeps registration and SMTP acceptance disabled.")
@@ -124,6 +128,10 @@ jobs:
           assert env["EMAIL_VERIFICATION_REQUIRED"].get("value") == "true"
           assert env["COOKIE_SECURE"].get("value") == "true"
           assert env["OMNISHELF_SMTP_ACCEPTANCE_ENABLED"].get("value") == "false"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_ENABLED"].get("value") == "false", "OIDC-authenticated staging account hooks must be off by default"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_ORIGIN"].get("value") == "https://omnishelf-1-3-9-email-recovery-staging.onrender.com"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_REF"].get("value") == "refs/heads/feature/1.3.9-email-verification-password-reset"
+          assert env["OMNISHELF_STAGING_ACCEPTANCE_WORKFLOW_REF"].get("value") == "Reisquin/Omnishelf/.github/workflows/omnishelf-1-3-9-live-smoke.yml@refs/heads/feature/1.3.9-email-verification-password-reset"
           forbidden = {"SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_HOST", "SMTP_FROM_EMAIL", "SMTP_TEST_RECIPIENT"}
           assert not forbidden.intersection(env), "SMTP credentials and recipient must not be committed to the blueprint"
           print("Isolated 1.3.9 staging blueprint is Free, secret-safe, pinned to the dedicated Neon branch target, and keeps registration and SMTP acceptance disabled.")

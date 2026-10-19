@@ -795,16 +795,27 @@ def put_state(payload: CloudStateBody, request: Request, user: User = Depends(re
 # A narrow test-account bootstrap for the dedicated staging deployment only.
 # It is absent from the regular preview unless explicitly enabled in that service's env.
 STAGING_ACCEPTANCE_SWITCH = os.getenv("OMNISHELF_STAGING_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-STAGING_ACCEPTANCE_ORIGIN = "https://omnishelf-1-3-8-auth-staging.onrender.com"
+STAGING_ACCEPTANCE_ORIGIN = os.getenv(
+    "OMNISHELF_STAGING_ACCEPTANCE_ORIGIN",
+    "https://omnishelf-1-3-8-auth-staging.onrender.com",
+).strip().rstrip("/")
 STAGING_ACCEPTANCE_AUDIENCE = "omnishelf-auth-staging"
-STAGING_ACCEPTANCE_WORKFLOW_REF = (
+STAGING_ACCEPTANCE_REF = os.getenv(
+    "OMNISHELF_STAGING_ACCEPTANCE_REF",
+    "refs/heads/deploy/1.3.8-https-preview",
+).strip()
+STAGING_ACCEPTANCE_WORKFLOW_REF = os.getenv(
+    "OMNISHELF_STAGING_ACCEPTANCE_WORKFLOW_REF",
     "Reisquin/Omnishelf/.github/workflows/omnishelf-1-3-8-live-smoke.yml"
-    "@refs/heads/deploy/1.3.8-https-preview"
-)
+    "@refs/heads/deploy/1.3.8-https-preview",
+).strip()
 if STAGING_ACCEPTANCE_SWITCH and (
     REGISTRATION_ENABLED
     or not COOKIE_SECURE
     or PUBLIC_APP_ORIGIN != STAGING_ACCEPTANCE_ORIGIN
+    or not STAGING_ACCEPTANCE_REF.startswith("refs/heads/")
+    or not STAGING_ACCEPTANCE_WORKFLOW_REF.startswith("Reisquin/Omnishelf/.github/workflows/")
+    or not STAGING_ACCEPTANCE_WORKFLOW_REF.endswith(f"@{STAGING_ACCEPTANCE_REF}")
 ):
     # Fail closed rather than accidentally enabling this control path on a regular app.
     raise RuntimeError("Staging acceptance hook requires the isolated staging origin, HTTPS cookies, and closed registration.")
@@ -834,7 +845,7 @@ def _validated_staging_actions_claims(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="A valid staging workflow identity is required.")
     if (
         claims.get("repository") != "Reisquin/Omnishelf"
-        or claims.get("ref") != "refs/heads/deploy/1.3.8-https-preview"
+        or claims.get("ref") != STAGING_ACCEPTANCE_REF
         or claims.get("workflow_ref") != STAGING_ACCEPTANCE_WORKFLOW_REF
         or claims.get("event_name") != "push"
     ):
