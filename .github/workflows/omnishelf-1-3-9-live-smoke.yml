@@ -5,8 +5,10 @@ on:
     branches:
       - feature/1.3.9-email-verification-password-reset
     paths:
+      - backend/**
       - scripts/live_staging_auth_acceptance.py
       - render.staging.yaml
+      - .github/workflows/omnishelf-1-3-9-live-smoke.yml
 
 permissions:
   contents: read
