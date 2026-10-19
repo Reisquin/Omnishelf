@@ -52,7 +52,7 @@ The separate Free Render service is live at https://omnishelf-1-3-9-email-recove
 - The isolated database now reports Alembic revision `003_email_verification_and_reset`. This migration has **not** been applied to Neon `main`.
 - Render's native health check is configured to `/healthz`; logs show HTTP 200 responses and a successful deployment.
 - Live OIDC-protected acceptance passed on real staging PostgreSQL: secure cookie attributes; public signup remains closed; concurrent initial cloud saves serialize; stale revisions cannot overwrite current data; snapshot persistence across logout/sign-in; two-account isolation; export omits password/session secrets; and password-confirmed account deletion revokes sessions. All temporary accounts were deleted; a read-only query confirms zero remaining synthetic test accounts.
-- The OIDC-only staging bootstrap was then switched off in Render and is being redeployed closed. Its default remains `false` in the source blueprint.
+- The OIDC-only staging bootstrap was switched off in Render, and the close-down redeploy completed successfully. The `/healthz` endpoint continued returning HTTP 200. Its default remains `false` in the source blueprint.
 - Public registration remains disabled. SMTP acceptance remains disabled, no real email has been sent, and the existing 1.3.8 and 1.0.0 services remain unchanged.
 
 ### Next gate — SMTP provider and real-mailbox acceptance

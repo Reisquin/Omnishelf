@@ -67,7 +67,7 @@
 - [ ] Run the hosted email configuration preflight without printing values.
 - [ ] Run the opt-in SMTP delivery acceptance test exactly once to a confirmed mailbox under the operator's control; disable the opt-in flag immediately afterwards and verify actual inbox/spam delivery.
 - [x] Live OIDC-protected staging acceptance passed: Secure/HttpOnly/SameSite session cookies; public registration denied; concurrent first writes serialize to one success/one conflict; stale revision cannot overwrite saved state; snapshot persists across logout/sign-in; two-account data is isolated; export excludes password/session secrets; account deletion requires the correct password and revokes all sessions. [Run 39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200).
-- [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; Render redeployment is closing those test-only routes.
+- [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; the Render close-down redeploy completed successfully and `/healthz` remains HTTP 200.
 - [ ] Verify email verification/resend/password-reset flows, one-time token replay prevention, generic responses on unknown-address/SMTP-failure cases, and post-reset session revocation after real SMTP delivery is configured.
 - [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
 
