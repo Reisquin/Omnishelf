@@ -51,6 +51,8 @@ The separate Free Render service is live at https://omnishelf-1-3-9-email-recove
 - The hosted target guard verified the intended non-secret host and database name before migrations.
 - The isolated database now reports Alembic revision `003_email_verification_and_reset`. This migration has **not** been applied to Neon `main`.
 - Render's native health check is configured to `/healthz`; logs show HTTP 200 responses and a successful deployment.
+- Live OIDC-protected acceptance passed on real staging PostgreSQL: secure cookie attributes; public signup remains closed; concurrent initial cloud saves serialize; stale revisions cannot overwrite current data; snapshot persistence across logout/sign-in; two-account isolation; export omits password/session secrets; and password-confirmed account deletion revokes sessions. All temporary accounts were deleted; a read-only query confirms zero remaining synthetic test accounts.
+- The OIDC-only staging bootstrap was then switched off in Render and is being redeployed closed. Its default remains `false` in the source blueprint.
 - Public registration remains disabled. SMTP acceptance remains disabled, no real email has been sent, and the existing 1.3.8 and 1.0.0 services remain unchanged.
 
 ### Next gate — SMTP provider and real-mailbox acceptance
@@ -69,7 +71,7 @@ For a Resend SMTP integration compatible with OmniShelf's STARTTLS configuration
 
 Keep `EMAIL_VERIFICATION_REQUIRED=true`, `COOKIE_SECURE=true`, `REGISTRATION_ENABLED=false`, and `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false` outside the explicit one-off test. `PUBLIC_APP_ORIGIN` must remain the exact HTTPS staging origin.
 
-Enter the SMTP values only through Render's private Environment settings. Never send the API key in chat or commit it to Git. Once the sender domain is verified and credentials are saved, run the configuration preflight and then perform exactly one opt-in acceptance message to a mailbox you control. Immediately switch the acceptance flag back off and verify the message in Inbox/Spam. Only then proceed to verification, resend, reset, token-replay, generic-response, and session-revocation checks. Do not enable public registration during staging acceptance.
+The non-secret connection values (`SMTP_HOST=smtp.resend.com`, `SMTP_PORT=587`, `SMTP_USERNAME=resend`, `SMTP_STARTTLS=true`, `SMTP_FROM_NAME=OmniShelf`) have already been set on the isolated staging service. You still need to create/access the provider account, verify a sending domain you control, create a sending API key, and privately add `SMTP_PASSWORD` and `SMTP_FROM_EMAIL` through Render's Environment settings. Never send the API key in chat or commit it to Git. Once the sender domain is verified and credentials are saved, run the configuration preflight and then perform exactly one opt-in acceptance message to a mailbox you control. Immediately switch the acceptance flag back off and verify the message in Inbox/Spam. Only then proceed to verification, resend, reset, token-replay, generic-response, and session-revocation checks. Do not enable public registration during staging acceptance.
 
 ## Account email setup
 
