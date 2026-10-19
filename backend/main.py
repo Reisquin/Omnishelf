@@ -906,7 +906,15 @@ if STAGING_ACCEPTANCE_ENABLED:
         _cleanup_staging_workflow_users(db, run_id, slot=slot)
         username = f"e2e_{run_id}_{attempt}_{slot}"
         email = f"e2e-{run_id}-{attempt}-{slot}@example.invalid"
-        user = User(username=username, email=email, password_hash=password_hasher.hash(payload.password))
+        # These synthetic @example.invalid accounts are created only after the exact GitHub OIDC
+        # workflow identity is validated. Mark them verified for auth/cloud acceptance without SMTP;
+        # public signup and real account-verification rules remain unchanged.
+        user = User(
+            username=username,
+            email=email,
+            password_hash=password_hasher.hash(payload.password),
+            email_verified_at=datetime.now(timezone.utc),
+        )
         db.add(user)
         try:
             db.commit()
