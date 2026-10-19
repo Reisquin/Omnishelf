@@ -1,0 +1,39 @@
+name: OmniShelf 1.3.9 live staging acceptance
+
+on:
+  push:
+    branches:
+      - feature/1.3.9-email-verification-password-reset
+    paths:
+      - backend/**
+      - scripts/live_staging_auth_acceptance.py
+      - render.staging.yaml
+      - .github/workflows/omnishelf-1-3-9-live-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  live-postgres-account-acceptance:
+    name: Live PostgreSQL/account acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OMNISHELF_AUTH_STAGING_URL: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
+    steps:
+      - name: Check out the exact feature-branch commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the minimal HTTPS client
+        run: python -m pip install "requests>=2.32,<3.0"
+
+      - name: Exercise live staging auth, sessions, cloud data, export and deletion
+        run: python scripts/live_staging_auth_acceptance.py
