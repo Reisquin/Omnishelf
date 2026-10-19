@@ -439,4 +439,14 @@ Date: 2026-10-18
 - Follow-up read-only Neon query still confirms `neondb` at `002_shared_auth_rate_limits`; migration 003 remains unapplied to the isolated child branch.
 - The isolated staging service currently exists on the Free plan but is not serving the app until the database URL is pasted directly into Render's private Environment page. Set Render's native health-check path to `/healthz` there as well.
 - Public registration remains disabled, SMTP acceptance remains disabled, no real mail was sent, and the 1.3.8 and 1.0.0 services remain untouched. After the dashboard-only URL/health-check setup, verify revision 002 is logged before migration 003 succeeds, then move to controlled SMTP and account-flow acceptance.
+## 1.3.9 staging — database and health gates passed
+Date: 2026-10-20 (IST)
 
+- Verified the new Free Render service `omnishelf-1-3-9-email-recovery-staging` is live at https://omnishelf-1-3-9-email-recovery-staging.onrender.com. The existing 1.3.8 and archived 1.0.0 services remain unchanged.
+- Operator added the pooled Neon connection string directly in Render's private Environment settings. No URL, username or password was added to source control or chat.
+- Render pre-migration target guard logged the independently expected endpoint hostname and database `neondb`, without printing credentials. Alembic then applied `003_email_verification_and_reset` to the isolated Neon child branch only.
+- Independent read-only Neon query confirmed `alembic_version.version_num = 003_email_verification_and_reset` and `current_database() = neondb`.
+- Operator configured the native Render health-check path `/healthz`. Render logs show successful deployment and repeated `GET /healthz` HTTP 200 responses.
+- Source documentation has been reconciled with actual live status in README and DEPLOYMENT_CHECKLIST. The earlier statements that 1.3.9 had not deployed or had not migrated are now replaced with the verified current result.
+- Remaining gate: configure a transactional SMTP provider and a sender address on a domain controlled by the operator, then run configuration preflight and an explicitly opted-in single-message delivery test to a controlled mailbox. README documents Resend SMTP as one low-friction option; provider account/domain credentials must be entered only into private settings.
+- Public registration remains disabled; `OMNISHELF_SMTP_ACCEPTANCE_ENABLED` remains false; no real email was sent. Verification/resend/reset replay and session-revocation acceptance, backup/restore retention, independent security review and provider/licensing review remain before public launch.
