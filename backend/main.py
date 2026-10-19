@@ -60,11 +60,32 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "OmniShelf").strip() or "OmniShelf"
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes", "on"}
-SMTP_CONFIGURED = bool(
-    SMTP_HOST
-    and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", SMTP_FROM_EMAIL)
-    and SMTP_STARTTLS
-    and (not RENDER_ENVIRONMENT or PUBLIC_APP_ORIGIN.startswith("https://"))
+def _smtp_configuration_is_complete(
+    *,
+    host: str,
+    username: str,
+    password: str,
+    from_email: str,
+    starttls: bool,
+    hosted: bool,
+    public_app_origin: str,
+) -> bool:
+    """Require credentials and a trusted HTTPS origin for hosted SMTP."""
+    sender_is_valid = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", from_email))
+    hosted_prerequisites = not hosted or (
+        bool(username and password) and public_app_origin.startswith("https://")
+    )
+    return bool(host and sender_is_valid and starttls and hosted_prerequisites)
+
+
+SMTP_CONFIGURED = _smtp_configuration_is_complete(
+    host=SMTP_HOST,
+    username=SMTP_USERNAME,
+    password=SMTP_PASSWORD,
+    from_email=SMTP_FROM_EMAIL,
+    starttls=SMTP_STARTTLS,
+    hosted=RENDER_ENVIRONMENT,
+    public_app_origin=PUBLIC_APP_ORIGIN,
 )
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
