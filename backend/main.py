@@ -1065,7 +1065,7 @@ if STAGING_ACCEPTANCE_ENABLED:
             # Log only the exception class and numeric transport status; never provider response text or credentials.
             status_code = getattr(exc, "smtp_code", None)
             if not isinstance(status_code, int):
-                match = re.search(r"\\bHTTP (\\d{3})\\b", str(exc))
+                match = re.search(r"HTTP ([0-9]{3})", str(exc))
                 status_code = int(match.group(1)) if match else None
             if isinstance(status_code, int):
                 LOGGER.warning("Staging email acceptance failed (%s; status %d).", type(exc).__name__, status_code)
