@@ -50,7 +50,7 @@
 
 ### CI/source validation
 - [x] Email-verification and password-reset endpoints use one-time hashed tokens, expiries, rate limits, generic recovery responses, and revoke sessions after password reset.
-- [x] SMTP sending requires STARTTLS with certificate verification; delivery failure does not disclose whether the email belongs to an account.
+- [x] The optional SMTP transport requires STARTTLS with certificate verification; hosted Free Render defaults to Resend HTTPS because outbound SMTP ports are blocked. Account endpoints continue to fail closed on delivery/configuration errors.
 - [x] Hosted email configuration preflight reports missing/unsafe settings without printing values.
 - [x] Hosted database target preflight runs **before** Alembic migrations and blocks startup if the independently expected host/database is missing or does not match; successful target inspection is read-only.
 - [x] Explicit SMTP acceptance command requires an opt-in flag and a dedicated test-recipient setting; CI uses a mocked SMTP client and sends no real email.
@@ -63,15 +63,15 @@
 - [x] Confirm the hosted target guard identified the intended endpoint and database before migration.
 - [x] Apply migration `003_email_verification_and_reset` only to the isolated staging branch; read-only Neon query confirms the new Alembic revision.
 - [x] Set Render's native health-check path to `/healthz`; latest logs show HTTP 200 health checks and a successful deploy.
-- [ ] Configure SMTP host, port, sending username, password/API key, verified sender address, and HTTPS origin in the isolated service's private settings. Never store provider credentials in Git or chat.
+- [ ] Configure Resend's HTTPS API transport on the isolated Free Render service. Keep the API key only in Render's private environment (SMTP_PASSWORD is supported for compatibility; RESEND_API_KEY is also supported). The onboarding@resend.dev sender permits a domain-free sandbox test; normal delivery to arbitrary users will still require a sender domain verified by Resend.
 - [ ] Run the hosted email configuration preflight without printing values.
-- [ ] Run the opt-in SMTP delivery acceptance test exactly once to a confirmed mailbox under the operator's control; disable the opt-in flag immediately afterwards and verify actual inbox/spam delivery.
+- [ ] Run the OIDC-gated, one-off Resend HTTPS API check to delivered@resend.dev, then turn both staging acceptance switches off. This is Resend's simulated-delivery recipient, not a real inbox. Real verification/password-reset emails to arbitrary users remain blocked on a verified sender domain.
 - [x] Live OIDC-protected staging acceptance passed: Secure/HttpOnly/SameSite session cookies; public registration denied; concurrent first writes serialize to one success/one conflict; stale revision cannot overwrite saved state; snapshot persists across logout/sign-in; two-account data is isolated; export excludes password/session secrets; account deletion requires the correct password and revokes all sessions. [Run 39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200).
 - [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; the Render close-down redeploy completed successfully and `/healthz` remains HTTP 200.
 - [ ] Verify email verification/resend/password-reset flows, one-time token replay prevention, generic responses on unknown-address/SMTP-failure cases, and post-reset session revocation after real SMTP delivery is configured.
 - [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
 
-**Current safety status:** the isolated 1.3.9 staging service is live and migrated, but this is not a public release. Public registration remains disabled, SMTP acceptance remains off, and no real SMTP email has been sent. The existing 1.3.8 preview and archived 1.0.0 service remain unchanged.
+**Current safety status:** the isolated 1.3.9 staging service is live and migrated, but this is not a public release. Public registration remains disabled and the one-off email acceptance switches are off by default. The Resend HTTPS path avoids Render Free's blocked SMTP ports; the simulated-delivery test does not prove inbox delivery to real users. The existing 1.3.8 preview and archived 1.0.0 service remain unchanged.
 
 ## Isolated Neon/Render staging target — verified deployment
 
@@ -82,8 +82,8 @@
 - [x] Independent read-only Neon query confirms `neondb` at `003_email_verification_and_reset`; migration 003 was applied to the isolated child branch only.
 - [x] Render native health-check setting is `/healthz`; the service is live and Render logs show `GET /healthz` returning HTTP 200.
 - [x] Staging blueprint keeps the free plan, registration disabled, email verification required, Secure cookies enabled, and SMTP acceptance disabled by default.
-- [ ] SMTP provider account/API key and verified sender address are still required. Non-secret Resend SMTP settings (host, port 587, username `resend`, STARTTLS, and sender name) are configured. Add `SMTP_PASSWORD` (sending API key) and `SMTP_FROM_EMAIL` privately in Render. Use a domain you control; do not purchase a domain or upgrade a provider plan without deciding that separately.
-- [ ] Run configuration preflight and explicit opt-in single-message SMTP acceptance to a mailbox under the operator's control; disable the acceptance flag immediately afterwards and verify actual delivery.
+- [ ] The Resend API key must be present only in Render's private environment as SMTP_PASSWORD (compatibility) or RESEND_API_KEY; EMAIL_DELIVERY_PROVIDER=resend_api selects HTTPS on port 443. The staging sender is onboarding@resend.dev, so the initial simulated-delivery test does not require a domain purchase. Do not enable general email signup/reset delivery until a sender domain is verified.
+- [ ] Run the provider-aware configuration preflight and the explicitly opted-in Resend HTTPS sandbox test. This test can confirm provider acceptance to delivered@resend.dev only; disable the switches immediately afterwards. Before launch, verify sender-domain ownership and test real inbox delivery.
 - [ ] Complete controlled account-flow acceptance for verification/resend/reset/token replay/session revocation after mail delivery works.
 
 **No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled until the remaining review and operations gates are complete.
