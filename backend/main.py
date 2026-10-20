@@ -487,6 +487,9 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                # Identify the application clearly rather than relying on urllib's generic User-Agent.
+                "User-Agent": "OmniShelf/1.3.9",
             },
             method="POST",
         )
