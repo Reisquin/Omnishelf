@@ -99,8 +99,10 @@ jobs:
           assert env["OMNISHELF_STAGING_ACCEPTANCE_ORIGIN"].get("value") == "https://omnishelf-1-3-9-email-recovery-staging.onrender.com"
           assert env["OMNISHELF_STAGING_ACCEPTANCE_REF"].get("value") == "refs/heads/feature/1.3.9-email-verification-password-reset"
           assert env["OMNISHELF_STAGING_ACCEPTANCE_WORKFLOW_REF"].get("value") == "Reisquin/Omnishelf/.github/workflows/omnishelf-1-3-9-live-smoke.yml@refs/heads/feature/1.3.9-email-verification-password-reset"
-          forbidden = {"SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_HOST", "SMTP_FROM_EMAIL", "SMTP_TEST_RECIPIENT"}
-          assert not forbidden.intersection(env), "SMTP credentials and recipient must not be committed to the blueprint"
+          forbidden = {"SMTP_PASSWORD", "SMTP_USERNAME", "SMTP_HOST", "SMTP_TEST_RECIPIENT", "RESEND_API_KEY"}
+          assert not forbidden.intersection(env), "SMTP/API credentials and test recipient must not be committed to the blueprint"
+          assert env["EMAIL_DELIVERY_PROVIDER"].get("value") == "resend_api", "Free Render staging must use HTTPS email delivery"
+          assert env["SMTP_FROM_EMAIL"].get("value") == "onboarding@resend.dev", "Only the documented Resend sandbox sender is allowed in the staging blueprint"
           print("Isolated 1.3.9 staging blueprint is Free, secret-safe, pinned to the dedicated Neon branch target, and keeps registration and SMTP acceptance disabled.")
           PY
       - name: Validate isolated 1.3.9 staging blueprint
