@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +37,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     main.app.dependency_overrides[main.get_db] = override_get_db
     monkeypatch.setattr(main, "REGISTRATION_ENABLED", True)
     monkeypatch.setattr(main, "COOKIE_SECURE", False)
+    # Existing tests cover legacy local development mode; dedicated tests enable verification.
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", False)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", False)
 
     with TestClient(main.app, base_url="http://testserver") as test_client:
         yield test_client
@@ -70,11 +74,11 @@ def state_payload(title: str = "White Nights", expected_revision: int = 0) -> di
 def test_api_and_health_report_version_and_database(client: TestClient) -> None:
     api = client.get("/api")
     assert api.status_code == 200
-    assert api.json()["version"] == "1.3.8"
+    assert api.json()["version"] == "1.3.9"
 
     health = client.get("/healthz")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "database": "ok", "version": "1.3.8"}
+    assert health.json() == {"status": "ok", "database": "ok", "version": "1.3.9"}
     assert health.headers["x-content-type-options"] == "nosniff"
     assert health.headers["x-frame-options"] == "DENY"
 
@@ -281,11 +285,11 @@ def test_oversized_request_is_rejected_before_route_processing(client: TestClien
     assert response.json()["detail"] == "Request body is too large."
 
 
-def test_backend_serves_the_real_1358_frontend_shell(client: TestClient) -> None:
+def test_backend_serves_the_real_139_frontend_shell(client: TestClient) -> None:
     page = client.get("/")
     assert page.status_code == 200
     assert "text/html" in page.headers.get("content-type", "")
-    assert 'content="1.3.8"' in page.text
+    assert 'content="1.3.9"' in page.text
     assert "Every story has a place." in page.text
 
     api = client.get("/api")
@@ -364,3 +368,270 @@ def test_staging_acceptance_routes_are_not_available_in_default_preview_mode(
     assert main.STAGING_ACCEPTANCE_ENABLED is False
     response = client.post("/__staging/acceptance/cleanup")
     assert response.status_code in (404, 405)
+
+
+
+def _email_link_token(body: str, query_key: str) -> str:
+    link = next((line.strip() for line in body.splitlines() if f"{query_key}=" in line), None)
+    assert link, f"No {query_key} link was included in the delivered message."
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    if query_key in query:
+        return query[query_key][0]
+    fragment = parsed.fragment.split("?", 1)[1] if "?" in parsed.fragment else ""
+    return parse_qs(fragment)[query_key][0]
+
+
+def test_email_verification_requires_one_time_token_and_resend_invalidates_old_link(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    delivered: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    created = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "verifyreader", "email": "verify@example.com", "password": "secure-example-pass-123"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["requires_email_verification"] is True
+    assert "set-cookie" not in created.headers
+    assert len(delivered) == 1
+    old_token = _email_link_token(delivered[0][2], "verify_email")
+
+    login_before_verification = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "verifyreader", "password": "secure-example-pass-123"},
+    )
+    assert login_before_verification.status_code == 403
+    assert "verify your email" in login_before_verification.json()["detail"].lower()
+
+    resend = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "verify@example.com"},
+    )
+    assert resend.status_code == 202
+    assert len(delivered) == 2
+    new_token = _email_link_token(delivered[1][2], "verify_email")
+    assert old_token != new_token
+
+    stale = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": old_token})
+    assert stale.status_code == 400
+    verified = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": new_token})
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verified"] is True
+    assert verified.json()["user"]["email_verified"] is True
+
+    replay = client.post("/api/auth/verify-email", headers=ORIGIN, json={"token": new_token})
+    assert replay.status_code == 400
+    signed_in = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "verifyreader", "password": "secure-example-pass-123"},
+    )
+    assert signed_in.status_code == 200
+    assert signed_in.json()["user"]["email_verified"] is True
+
+
+
+def test_verification_resend_mail_failure_does_not_disclose_account_existence(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: None)
+
+    created = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "mailfailure", "email": "mailfailure@example.com", "password": "secure-example-pass-123"},
+    )
+    assert created.status_code == 201, created.text
+
+    def fail_delivery(to: str, subject: str, body: str) -> None:
+        raise RuntimeError("simulated SMTP failure with sensitive diagnostic")
+
+    monkeypatch.setattr(main, "_send_email", fail_delivery)
+    known = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "mailfailure@example.com"},
+    )
+    unknown = client.post(
+        "/api/auth/verification-email",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert "sensitive diagnostic" not in known.text
+
+
+def test_password_reset_mail_failure_does_not_disclose_account_existence(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register(client, username="resetmailfailure", email="resetmailfailure@example.com")
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+
+    def fail_delivery(to: str, subject: str, body: str) -> None:
+        raise RuntimeError("simulated SMTP failure with sensitive diagnostic")
+
+    monkeypatch.setattr(main, "_send_email", fail_delivery)
+    known = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "resetmailfailure@example.com"},
+    )
+    unknown = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert "sensitive diagnostic" not in known.text
+
+
+def test_password_reset_uses_single_use_token_and_revokes_all_sessions(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    register(client, username="resetreader", email="reset@example.com")
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    delivered: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(main, "_send_email", lambda to, subject, body: delivered.append((to, subject, body)))
+
+    request = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "reset@example.com"},
+    )
+    assert request.status_code == 202
+    assert len(delivered) == 1
+    token = _email_link_token(delivered[0][2], "reset_password")
+
+    missing = client.post(
+        "/api/auth/password-reset/request",
+        headers=ORIGIN,
+        json={"email": "not-an-account@example.com"},
+    )
+    assert missing.status_code == 202
+    assert missing.json() == request.json()
+
+    updated = client.post(
+        "/api/auth/password-reset/confirm",
+        headers=ORIGIN,
+        json={"token": token, "password": "a-new-secure-password-456"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["reset"] is True
+    # The session created by register() must no longer authenticate after a reset.
+    assert client.get("/api/auth/me").json()["user"] is None
+
+    old_password = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "resetreader", "password": "secure-example-pass-123"},
+    )
+    assert old_password.status_code == 401
+    new_password = client.post(
+        "/api/auth/login",
+        headers=ORIGIN,
+        json={"identifier": "resetreader", "password": "a-new-secure-password-456"},
+    )
+    assert new_password.status_code == 200
+
+    replay = client.post(
+        "/api/auth/password-reset/confirm",
+        headers=ORIGIN,
+        json={"token": token, "password": "another-secure-password-789"},
+    )
+    assert replay.status_code == 400
+
+
+
+def test_smtp_delivery_uses_starttls_and_configured_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple] = []
+
+    class FakeSMTP:
+        def __init__(self, host: str, port: int, timeout: int) -> None:
+            calls.append(("connect", host, port, timeout))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            calls.append(("close", exc_type))
+
+        def ehlo(self) -> None:
+            calls.append(("ehlo",))
+
+        def starttls(self, context) -> None:
+            calls.append(("starttls", context))
+
+        def login(self, username: str, password: str) -> None:
+            calls.append(("login", username, password))
+
+        def send_message(self, message) -> None:
+            calls.append(("send", message))
+
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "SMTP_STARTTLS", True)
+    monkeypatch.setattr(main, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(main, "SMTP_PORT", 587)
+    monkeypatch.setattr(main, "SMTP_USERNAME", "sender@example.test")
+    monkeypatch.setattr(main, "SMTP_PASSWORD", "test-only-secret")
+    monkeypatch.setattr(main, "SMTP_FROM_EMAIL", "sender@example.test")
+    monkeypatch.setattr(main, "SMTP_FROM_NAME", "OmniShelf Test")
+    monkeypatch.setattr(main.smtplib, "SMTP", FakeSMTP)
+
+    main._send_email("reader@example.test", "Verification", "One-time test link")
+
+    assert calls[0] == ("connect", "smtp.example.test", 587, 10)
+    assert calls.count(("ehlo",)) == 2
+    tls_calls = [call for call in calls if call[0] == "starttls"]
+    assert len(tls_calls) == 1
+    assert tls_calls[0][1] is not None  # Explicit certificate-validating SSL context.
+    assert ("login", "sender@example.test", "test-only-secret") in calls
+    message = next(call[1] for call in calls if call[0] == "send")
+    assert message["To"] == "reader@example.test"
+    assert message["From"] == "OmniShelf Test <sender@example.test>"
+    assert message["Subject"] == "Verification"
+    assert message.get_content().strip() == "One-time test link"
+
+
+def test_smtp_sender_refuses_delivery_when_starttls_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connections: list[tuple] = []
+
+    def unexpected_connection(*args, **kwargs):
+        connections.append((args, kwargs))
+        raise AssertionError("SMTP must not be contacted without STARTTLS.")
+
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", True)
+    monkeypatch.setattr(main, "SMTP_STARTTLS", False)
+    monkeypatch.setattr(main.smtplib, "SMTP", unexpected_connection)
+
+    with pytest.raises(RuntimeError, match="STARTTLS is required"):
+        main._send_email("reader@example.test", "Subject", "Body")
+    assert connections == []
+
+
+def test_verification_registration_fails_closed_without_smtp(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(main, "EMAIL_VERIFICATION_REQUIRED", True)
+    monkeypatch.setattr(main, "SMTP_CONFIGURED", False)
+    response = client.post(
+        "/api/auth/register",
+        headers=ORIGIN,
+        json={"username": "blockedreader", "email": "blocked@example.com", "password": "secure-example-pass-123"},
+    )
+    assert response.status_code == 503
+    assert "email delivery is not configured" in response.json()["detail"].lower()

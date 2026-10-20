@@ -45,3 +45,53 @@
 - [ ] Automated database backup and restore drill.
 - [ ] Independent security and provider/licensing review.
 - [ ] Enable registration only after all preceding items are complete.
+
+## 1.3.9 email and database release gates (feature branch only)
+
+### CI/source validation
+- [x] Email-verification and password-reset endpoints use one-time hashed tokens, expiries, rate limits, generic recovery responses, and revoke sessions after password reset.
+- [x] The optional SMTP transport requires STARTTLS with certificate verification; hosted Free Render defaults to Resend HTTPS because outbound SMTP ports are blocked. Account endpoints continue to fail closed on delivery/configuration errors.
+- [x] Hosted email configuration preflight reports missing/unsafe settings without printing values.
+- [x] Hosted database target preflight runs **before** Alembic migrations and blocks startup if the independently expected host/database is missing or does not match; successful target inspection is read-only.
+- [x] Explicit SMTP acceptance command requires an opt-in flag and a dedicated test-recipient setting; CI uses a mocked SMTP client and sends no real email.
+- [x] Latest full 1.3.9 code CI run before this checklist/environment documentation update: [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165) (five jobs passed, including PostgreSQL integration and visual previews).
+
+### Current 1.3.9 release gates
+
+- [x] Confirm the intended Render workspace and isolate the Neon child branch `omnishelf-1-3-9-email-recovery-staging`, database `neondb`.
+- [x] Add the expected database host/name guard and private `DATABASE_URL` to the isolated Render staging service.
+- [x] Confirm the hosted target guard identified the intended endpoint and database before migration.
+- [x] Apply migration `003_email_verification_and_reset` only to the isolated staging branch; read-only Neon query confirms the new Alembic revision.
+- [x] Set Render's native health-check path to `/healthz`; latest logs show HTTP 200 health checks and a successful deploy.
+- [x] Resend HTTPS transport settings are present in the private Render staging environment; the `onboarding@resend.dev` sender remains a domain-free sandbox placeholder. The request reached Resend, but HTTP 403 means valid sending authorization is **not yet confirmed**. Normal delivery to arbitrary users still requires a sender domain verified by Resend.
+- [ ] Run the standalone hosted email configuration preflight. The guarded runtime checks passed far enough to contact Resend, but the separate preflight command has not been executed directly.
+- [x] Attempted the OIDC-gated, one-off Resend HTTPS test to `delivered@resend.dev`. Resend returned HTTP 403 (provider details deliberately not logged); the workflow cleaned up both temporary accounts. Both acceptance switches have since been set to `false`, and the Render close-down redeploy is live. This was **not** a successful delivery test; inspect the Resend request log and key permissions before retrying.
+- [x] Live OIDC-protected staging acceptance passed: Secure/HttpOnly/SameSite session cookies; public registration denied; concurrent first writes serialize to one success/one conflict; stale revision cannot overwrite saved state; snapshot persists across logout/sign-in; two-account data is isolated; export excludes password/session secrets; account deletion requires the correct password and revokes all sessions. [Run 39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200).
+- [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; the Render close-down redeploy completed successfully and `/healthz` remains HTTP 200.
+- [ ] Verify email verification/resend/password-reset flows, one-time token replay prevention, generic responses on unknown-address/SMTP-failure cases, and post-reset session revocation after real SMTP delivery is configured.
+- [ ] Complete backup/restore and retention planning, independent security review, and provider/licensing review before public launch.
+
+**Current safety status:** the isolated 1.3.9 staging service is live and migrated, but this is not a public release. Public registration remains disabled and the one-off email acceptance switches are off by default. The Resend HTTPS path avoids Render Free's blocked SMTP ports; the simulated-delivery test does not prove inbox delivery to real users. The existing 1.3.8 preview and archived 1.0.0 service remain unchanged.
+
+## Isolated Neon/Render staging target — verified deployment
+
+- [x] Created Neon project `omnishelf-preview` with dedicated child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`), not Neon `main`.
+- [x] Created Free Render web service `omnishelf-1-3-9-email-recovery-staging` (`srv-dbaib6eq1p3s73bpmsig`) on `feature/1.3.9-email-verification-password-reset`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
+- [x] Added the pooled Neon connection URI directly in Render's private environment. The URI/password do not appear in Git, logs, or chat.
+- [x] The pre-migration target check confirmed the expected hostname and `neondb`; only then did Alembic upgrade `002_shared_auth_rate_limits` to `003_email_verification_and_reset`.
+- [x] Independent read-only Neon query confirms `neondb` at `003_email_verification_and_reset`; migration 003 was applied to the isolated child branch only.
+- [x] Render native health-check setting is `/healthz`; the service is live and Render logs show `GET /healthz` returning HTTP 200.
+- [x] Staging blueprint keeps the free plan, registration disabled, email verification required, Secure cookies enabled, and SMTP acceptance disabled by default.
+- [x] A non-empty Resend API key setting is present in Render's private environment (the guarded test reached the provider); its authorization/scope is not confirmed because Resend returned HTTP 403. The key is never read back or printed. `EMAIL_DELIVERY_PROVIDER=resend_api` selects HTTPS on port 443.
+- [ ] Resolve the Resend HTTP 403 using the request log in the Resend dashboard, then rerun the sandbox acceptance only after confirming the key's send permission and scope. The test recipient is `delivered@resend.dev`, a simulation only. A verified sender domain and real-inbox test remain launch requirements.
+- [ ] Complete controlled account-flow acceptance for verification/resend/reset/token replay/session revocation after mail delivery works.
+
+**No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled until the remaining review and operations gates are complete.
+
+
+## Resend sandbox acceptance attempt — 2026-10-20
+
+- The controlled one-off request to Resend's simulated recipient returned HTTP 403 twice. The service records only status/category and does not log API keys or raw provider response bodies; the current safe classifier could not identify a more specific category.
+- Each failed workflow cleaned up both temporary test accounts. Render was redeployed with `OMNISHELF_STAGING_ACCEPTANCE_ENABLED=false`, `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false`, an empty `SMTP_TEST_RECIPIENT`, `REGISTRATION_ENABLED=false`, and `EMAIL_VERIFICATION_REQUIRED=true`.
+- The close-down deployment is live and `/healthz` returns HTTP 200. The live-account acceptance workflow is back to manual dispatch with explicit confirmation only. No real inbox message was sent; no domain was purchased; public registration stays disabled.
+- Next: use Resend Dashboard → Logs to inspect the rejected request's reason, check whether the API key is restricted to another domain or lacks sending permission, then update the private Render key only if needed. Do not paste the key into chat or GitHub.

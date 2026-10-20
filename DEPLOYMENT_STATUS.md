@@ -146,3 +146,24 @@ Date: 2026-10-16
 - Fresh screenshot artifacts: auth staging previews ID 12033323664, live preview screenshots ID 12033277508, and layout previews ID 12032499043 (available through 2026-10-30). The combined local screenshot package is linked in the task summary.
 - Known connection-mapping discrepancy: querying the only currently listed Neon project's primary branch still returns 001_initial_backend and no auth_rate_limits table, although Render's preview startup log shows that revision 002 was applied to its configured PostgreSQL. The 1.3.8 preview's actual DATABASE_URL target is not exposed by the available read-only Render service metadata; verify that mapping before assuming Neon main is that service's database. Do not alter database URLs or repoint the service without confirming the intended target.
 
+
+
+## Feature build 1.3.9 — email verification and password recovery
+Date: 2026-10-18
+
+- Created isolated branch `feature/1.3.9-email-verification-password-reset` from the accepted 1.3.8 HTTPS preview. This is a code branch only: it has not been merged or deployed, and the 1.3.8 live service remains unchanged.
+- Added migration `003_email_verification_and_reset`: records an email-verification timestamp, marks accounts created before this feature as verified so existing logins survive, and adds a token table with single-purpose hashes, expiry, and cascading account deletion.
+- Added account verification, resend-verification, password-reset request, and password-reset confirmation endpoints. Verification/reset tokens are random, stored as SHA-256 hashes, expire (24h/30m defaults), and are serialized with a row lock when consumed. Password recovery changes the Argon2 hash and revokes all server sessions.
+- Added rate-limit buckets for verification and reset requests/actions; generic request responses avoid revealing whether an email belongs to an account. Hosted mail requires STARTTLS, a configured sender, and the trusted HTTPS `PUBLIC_APP_ORIGIN`. If mail is not configured, signup/recovery fails closed; hosted public registration remains disabled.
+- Added sign-in UI links for forgotten passwords and resending verification email, a reset-password form, email-link handling, API tests using a mocked mail sender, PostgreSQL integration coverage, and Playwright UI coverage. The build version and desktop/mobile screenshot artifact labels are 1.3.9.
+- Validation status at note creation: source and CI configuration committed on the feature branch, but CI has not yet been reported green. Do not call this release-ready until the pull-request checks and screenshot artifact succeed.
+- Remaining before any deployment: configure and test an SMTP sender in secret settings; verify the preview service's real Neon target instead of assuming it is the currently listed primary branch; reconcile migration target; retain public registration disabled; then complete backup-retention, independent security and provider/licensing reviews.
+
+
+## Validation follow-up — OmniShelf 1.3.9
+Date: 2026-10-18
+
+- GitHub Actions run [39072395285](https://github.com/Reisquin/Omnishelf/actions/runs/39072395285) passed all five jobs on revision `36cd170800141742f785f58379cc8452f71a5dad`: frontend/layout preview, isolated API tests, PostgreSQL integration tests, free deployment configuration, and fresh SQLite migration check.
+- The same run produced artifact `omnishelf-1.3.9-layout-previews`, including desktop/mobile profile shots, the sign-in recovery links, password-reset form, and connected cloud-sync screen. Artifact expires 2026-10-31.
+- The subsequent cleanup only removed temporary diagnostics from the browser test. Its new HEAD must have its own green check before merge.
+- The browser/API tests use a mocked mail sender; real SMTP delivery and trusted-origin settings are not yet validated in the hosted service. No live service, branch deployment, or hosted database was changed. The 1.3.9 PR remains a draft pending SMTP setup, database-target reconciliation, and launch review.

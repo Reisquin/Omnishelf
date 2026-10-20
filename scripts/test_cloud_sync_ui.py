@@ -92,6 +92,34 @@ class MockCloudAPI:
             route.fulfill(status=204, body="")
             return
 
+        if path == "/api/auth/verification-email" and method == "POST":
+            self.respond(route, {
+                "message": "If an unverified OmniShelf account uses that email, a verification link will arrive shortly."
+            }, 202)
+            return
+
+        if path == "/api/auth/password-reset/request" and method == "POST":
+            self.respond(route, {
+                "message": "If a verified OmniShelf account uses that email, password-reset instructions will arrive shortly."
+            }, 202)
+            return
+
+        if path == "/api/auth/verify-email" and method == "POST":
+            self.respond(route, {
+                "verified": True,
+                "message": "Email verified. You can now sign in.",
+                "user": self.user,
+            })
+            return
+
+        if path == "/api/auth/password-reset/confirm" and method == "POST":
+            payload = request.post_data_json or {}
+            if payload.get("token") != "fixture-reset-token":
+                self.respond(route, {"detail": "This link is invalid or has expired. Request a new one."}, 400)
+                return
+            self.respond(route, {"reset": True, "message": "Password updated. Sign in with your new password."})
+            return
+
         if path == "/api/auth/login" and method == "POST":
             payload = request.post_data_json or {}
             if (
@@ -205,13 +233,50 @@ def main() -> None:
             page = browser.new_page(viewport={"width": 1440, "height": 1100}, device_scale_factor=1)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             page.route("**/api/**", api.handle)
-            page.goto(f"http://127.0.0.1:{server.server_port}/index.html", wait_until="domcontentloaded")
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            page.goto(f"{base_url}/index.html", wait_until="domcontentloaded")
             page.locator("#cloudAccountBtn").wait_for(state="visible", timeout=10000)
             page.wait_for_timeout(300)
 
-            # Anonymous access should show the sign-in screen; no public signup call is made.
+            # Check the recovery entry points and exercise their mocked email request flows.
             page.locator("#cloudAccountBtn").click()
             page.locator("#cloudAuthForm").wait_for(state="visible", timeout=5000)
+            page.locator("#cloudForgotPassword").wait_for(state="visible", timeout=3000)
+            page.locator("#cloudResendVerification").wait_for(state="visible", timeout=3000)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-sign-in-recovery-links.png"), full_page=True)
+            page.locator("#cloudForgotPassword").click()
+            page.locator("#cloudRecoveryEmail").fill("test-reader@example.invalid")
+            page.locator("#cloudRecoverySubmit").click()
+            page.get_by_text(
+                "If a verified OmniShelf account uses that email, password-reset instructions will arrive shortly.",
+                exact=True,
+            ).wait_for(timeout=5000)
+            page.locator("#cloudRecoveryBack").click()
+            page.locator("#cloudResendVerification").click()
+            page.locator("#cloudRecoveryEmail").fill("test-reader@example.invalid")
+            page.locator("#cloudRecoverySubmit").click()
+            page.get_by_text(
+                "If an unverified OmniShelf account uses that email, a verification link will arrive shortly.",
+                exact=True,
+            ).wait_for(timeout=5000)
+            page.locator("#cloudRecoveryBack").click()
+
+            # Verification/reset links remove tokens from browser history before rendering the next step.
+            page.goto(f"{base_url}/index.html#profile?verify_email=fixture-verification-token", wait_until="domcontentloaded")
+            page.get_by_text("Email verified. You can now sign in.", exact=True).wait_for(timeout=5000)
+            assert "verify_email" not in page.url
+            assert "fixture-verification-token" not in page.url
+            page.goto(f"{base_url}/index.html#profile?reset_password=fixture-reset-token", wait_until="domcontentloaded")
+            page.locator("#cloudNewPassword").wait_for(state="visible", timeout=5000)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-password-reset.png"), full_page=True)
+            assert "reset_password" not in page.url
+            assert "fixture-reset-token" not in page.url
+            page.locator("#cloudNewPassword").fill("a-ui-reset-password-123")
+            page.locator("#cloudConfirmPassword").fill("a-ui-reset-password-123")
+            page.locator("#cloudRecoverySubmit").click()
+            page.get_by_text("Password updated. Sign in with your new password.", exact=True).wait_for(timeout=5000)
+
+            # Anonymous access should show the sign-in screen; no public signup call is made.
             page.locator("#cloudIdentifier").fill("test-reader")
             page.locator("#cloudPassword").fill(FIXTURE_PASSWORD)
             page.locator("#cloudAuthSubmit").click()
@@ -219,7 +284,7 @@ def main() -> None:
             page.get_by_text("Not uploaded yet", exact=True).wait_for(timeout=5000)
 
             # Preserve a real screenshot of the authenticated UI fixture for the build artifact.
-            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.8-cloud-sync-connected.png"), full_page=True)
+            page.screenshot(path=str(ARTIFACTS / "omnishelf-1.3.9-cloud-sync-connected.png"), full_page=True)
 
             dialogs = []
             def handle_dialog(dialog):

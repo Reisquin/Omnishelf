@@ -286,3 +286,198 @@ Date: 2026-10-16
 
 - Deployment verification caveat: staging's Neon branch confirms migration 002, and the preview service's PostgreSQL startup logs show that Alembic ran the same upgrade. A direct query to the known Neon project's primary branch still reports 001 and no auth_rate_limits table, so the preview service's exact DATABASE_URL target remains unverified. Confirm the service-to-database mapping before using Neon main as the preview's backing store. Do not change the connection string blindly.
 - Fresh post-deployment screenshot artifacts are auth staging previews ID 12033323664, live screenshots ID 12033277508, and layout previews ID 12032499043, retained through 2026-10-30.
+
+
+## Feature build 1.3.9 — email verification and password recovery
+Date: 2026-10-18
+
+- Created isolated branch `feature/1.3.9-email-verification-password-reset` from the accepted 1.3.8 HTTPS preview. This is a code branch only: it has not been merged or deployed, and the 1.3.8 live service remains unchanged.
+- Added migration `003_email_verification_and_reset`: records an email-verification timestamp, marks accounts created before this feature as verified so existing logins survive, and adds a token table with single-purpose hashes, expiry, and cascading account deletion.
+- Added account verification, resend-verification, password-reset request, and password-reset confirmation endpoints. Verification/reset tokens are random, stored as SHA-256 hashes, expire (24h/30m defaults), and are serialized with a row lock when consumed. Password recovery changes the Argon2 hash and revokes all server sessions.
+- Added rate-limit buckets for verification and reset requests/actions; generic request responses avoid revealing whether an email belongs to an account. Hosted mail requires STARTTLS, a configured sender, and the trusted HTTPS `PUBLIC_APP_ORIGIN`. If mail is not configured, signup/recovery fails closed; hosted public registration remains disabled.
+- Added sign-in UI links for forgotten passwords and resending verification email, a reset-password form, email-link handling, API tests using a mocked mail sender, PostgreSQL integration coverage, and Playwright UI coverage. The build version and desktop/mobile screenshot artifact labels are 1.3.9.
+- Validation status at note creation: source and CI configuration committed on the feature branch, but CI has not yet been reported green. Do not call this release-ready until the pull-request checks and screenshot artifact succeed.
+- Remaining before any deployment: configure and test an SMTP sender in secret settings; verify the preview service's real Neon target instead of assuming it is the currently listed primary branch; reconcile migration target; retain public registration disabled; then complete backup-retention, independent security and provider/licensing reviews.
+
+
+## Validation follow-up — OmniShelf 1.3.9
+Date: 2026-10-18
+
+- GitHub Actions run [39072395285](https://github.com/Reisquin/Omnishelf/actions/runs/39072395285) passed all five jobs on revision `36cd170800141742f785f58379cc8452f71a5dad`: frontend/layout preview, isolated API tests, PostgreSQL integration tests, free deployment configuration, and fresh SQLite migration check.
+- The same run produced artifact `omnishelf-1.3.9-layout-previews`, including desktop/mobile profile shots, the sign-in recovery links, password-reset form, and connected cloud-sync screen. Artifact expires 2026-10-31.
+- The subsequent cleanup only removed temporary diagnostics from the browser test. Its new HEAD must have its own green check before merge.
+- The browser/API tests use a mocked mail sender; real SMTP delivery and trusted-origin settings are not yet validated in the hosted service. No live service, branch deployment, or hosted database was changed. The 1.3.9 PR remains a draft pending SMTP setup, database-target reconciliation, and launch review.
+
+
+## Recovery endpoint privacy hardening
+Date: 2026-10-18
+
+- Updated email-verification resend and password-reset requests so SMTP delivery errors do not change the public response. Known and unknown addresses now receive the same generic HTTP 202 response, removing a response-status/detail side channel that could disclose account existence.
+- Delivery failures produce fixed, non-sensitive warning messages; exception text, recipients, and email tokens are not written to the application log.
+- Added regression tests that simulate SMTP failures for both existing and nonexistent addresses and assert identical status codes and response bodies.
+- This is still an isolated feature-branch change. It has not been deployed to the 1.3.8 preview, and public registration remains disabled. The updated CI results and refreshed screenshot artifacts should be recorded only after the new branch HEAD passes.
+
+
+### Validation result — recovery privacy hardening
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39075433434](https://github.com/Reisquin/Omnishelf/actions/runs/39075433434) on revision `b9e05b23d6f9e57a2865a1b3a5a74b083309b0a5`; all five jobs passed, including the newly added mocked-SMTP failure regression tests.
+- **Fresh preview artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117200332`, includes desktop, mobile, connected cloud-sync, sign-in recovery links, and password-reset form screenshots; retained through 2026-10-31.
+- The change remains on the draft 1.3.9 feature branch. It does not alter live services or enable public registration.
+- Remaining before a hosted 1.3.9 rollout: configure SMTP credentials/sender through secret settings and verify real email delivery; resolve which Neon database each 1.3.8 service actually uses before applying migration 003; keep public registration closed until provider delivery, backup-retention, independent security, and provider/licensing reviews are complete.
+
+
+## Next launch-readiness step — SMTP transport acceptance
+Date: 2026-10-18
+
+- Added mocked SMTP transport regression tests to prove message delivery uses STARTTLS with certificate validation, performs configured authentication, and refuses delivery if STARTTLS is disabled. These checks avoid contacting any external mail server or using real credentials.
+- Expanded the 1.3.9 README with secret-setting guidance and a pre-launch SMTP acceptance checklist covering real mailbox verification, one-time-link replay, session revocation, generic request responses, and read-only migration-target verification.
+- The feature branch has not been deployed. Real SMTP settings still require a mail provider sender/credentials in Render's private environment settings; no credentials were invented or written into source. Public registration stays disabled.
+- Database mapping remains unresolved: the 1.3.8 free service logs show Alembic revision 002 applied, while the Neon primary branch queried through the available account connection shows revision 001 and the isolated auth-staging branch shows revision 002. Render's available metadata does not reveal the secret database URL, so do not repoint services or apply migration 003 until an authorized in-service target check is available.
+- Independent security review, recurring backup-retention strategy, and provider/licensing review remain required before public launch.
+
+
+### SMTP transport gate — validation result
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39075898791](https://github.com/Reisquin/Omnishelf/actions/runs/39075898791), revision `519bda67621b98fca0e12d069300ff8f2fad21d6`; all five jobs passed after adding mocked SMTP STARTTLS/authentication tests and the SMTP acceptance checklist.
+- **Fresh layout artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12117265981`, includes updated desktop/mobile and account recovery screens. The frontend itself was not changed in this documentation/test-only step.
+- This verifies transport behavior against a mocked SMTP client. It does not verify a real provider, credentials, sender-domain authentication, or delivery to a real mailbox. Those remain a deployment gate.
+- Existing hosted 1.3.8 services remain unchanged; migration 003 has not been applied to them.
+
+## Hosted email configuration preflight
+Date: 2026-10-18
+
+- Added `backend/config_preflight.py`, a no-network command that validates required SMTP settings, a valid SMTP port, HTTPS-only `PUBLIC_APP_ORIGIN`, STARTTLS, mandatory email verification, Secure cookies, and closed public registration.
+- The command `python -m backend.config_preflight` reports only setting names and policy failures; it never prints environment values. It explicitly says that SMTP connectivity and actual mailbox delivery are not tested.
+- Added `backend/tests/test_config_preflight.py` to cover valid hosted configuration, missing secret handling, unsafe flags/invalid origins, and protection against printing sensitive environment values. These tests are included in the existing backend test job.
+- This is a source/CI safeguard only. No Render environment variables, database targets, migrations, or hosted services were changed. The real SMTP-provider mailbox test and database-target reconciliation remain deployment blockers; public registration remains disabled.
+- Next: verify this branch revision's five CI jobs and regenerate the 1.3.9 screenshot artifact; then continue isolated staging acceptance without merging or changing the live preview.
+
+### Hosted email preflight — validation result
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39153980909](https://github.com/Reisquin/Omnishelf/actions/runs/39153980909) on the 1.3.9 feature branch. All five jobs passed: backend tests (including the new preflight tests), PostgreSQL integration tests, free-deployment configuration guard, Alembic migration check, and Playwright layout preview.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12145269780`, containing desktop, mobile, sign-in recovery, password-reset, and cloud-sync screenshots.
+- The preflight checks required setting presence, port bounds, HTTPS-origin structure, STARTTLS, verification, Secure cookies, and disabled registration; regression tests check it never prints configured values. It does not test SMTP connectivity or real message delivery.
+- Source remains isolated on `feature/1.3.9-email-verification-password-reset` and PR #1 remains a draft. No hosted service, production branch, environment variables, or database was changed. Migration 003 is not applied to hosted databases by this step.
+- Next gate remains real SMTP acceptance on a dedicated mailbox and a safe read-only reconciliation of the Render service's configured database target before any deployment. Keep public registration disabled.
+
+## Hosted database target guard
+Date: 2026-10-18
+
+- Added `backend/database_target_preflight.py`, a read-only pre-migration target check. On Render it requires `OMNISHELF_EXPECTED_DATABASE_HOST` and `OMNISHELF_EXPECTED_DATABASE_NAME`, compares them to the non-secret target fields in `DATABASE_URL`, then queries the connected database name and currently applied Alembic revision.
+- Updated the Docker startup command to run the guard **before** `alembic upgrade head`. Missing/mismatched settings or a failed identity query stop startup before migrations run. Local development bypasses this hosted-only guard.
+- Diagnostics never print the connection URL, username, or password; mismatch output suppresses the actual connection target. On success, only the confirmed hostname, database name, and revision are shown.
+- Added tests for host/database mismatch rejection, no connection on a pre-connection mismatch, read-only revision identification, connected database mismatch, local-development skip, and secret non-disclosure. The deployment-configuration CI job now checks the ordering of the guard and Alembic command.
+- **Passed:** GitHub Actions run [39154625201](https://github.com/Reisquin/Omnishelf/actions/runs/39154625201) on source/docs revision `eb9b1605565bdf40dc71c8904a4130f9972e599b`; all five jobs passed.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12146960747`, containing desktop/mobile profile layouts and the account recovery/cloud-sync screens.
+- This change makes no hosted service/database changes and does not apply migration 003 anywhere. The PR remains a draft. Before any hosted deployment, independently confirm the intended Neon target and set the two expected-target values in the intended service's private settings; real SMTP delivery, backups/restore, independent security review, and provider/licensing review remain release blockers. Keep public registration disabled.
+
+## Explicit SMTP delivery acceptance tool
+Date: 2026-10-18
+
+- Added `backend/smtp_acceptance.py`, an operator-invoked one-off email-delivery check. It requires `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true` and an explicit `SMTP_TEST_RECIPIENT` in addition to the verified hosted email/security settings; it does not run at application startup.
+- The script uses certificate-validated STARTTLS, authenticates with configured SMTP credentials, and sends one plain acceptance message with no account token or password. It reports only whether the SMTP server accepted the mail and reminds the operator to check the dedicated mailbox, including spam/quarantine.
+- Provider/OS exception details and credential values are suppressed. Missing opt-in, invalid recipient, invalid security flags, or STARTTLS disabled prevent connection; CI uses a mocked SMTP transport and sends no actual mail.
+- Added `backend/tests/test_smtp_acceptance.py` for the explicit opt-in gate, recipient validation, TLS/auth/send behavior, no secret leakage, and rejection when STARTTLS is disabled. README now documents the one-off controlled usage and warns against leaving the opt-in flag enabled.
+- **Passed:** GitHub Actions run [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165) on source/docs revision `1c53ade6c9b87649f3bcea3cd292ba0003071914`; all five jobs passed, including backend tests, PostgreSQL integration, migration checks, deployment guard, and visual preview generation.
+- **Fresh visual artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12146208465`, with desktop, mobile, sign-in recovery, password reset, and cloud-sync screenshots.
+- This creates the capability to run an SMTP test once the service owner configures credentials and a mailbox; it does not claim live provider delivery has been tested. No email was sent and no Render environment/database/service was changed. Migration 003 remains unapplied to hosted services, PR #1 remains draft, and public registration remains disabled.
+- Next: after a controlled test mailbox and provider credentials are configured privately, execute the one-off SMTP acceptance check. Independently verify the intended Neon database endpoint and set expected target values before considering any hosted 1.3.9 deployment.
+
+## 1.3.9 release handoff documentation
+Date: 2026-10-18
+
+- Extended `backend/.env.example` with the two hosted database-target expectation variables and the SMTP acceptance opt-in/recipient settings, all blank/disabled by default so local development is unaffected.
+- Added a dedicated 1.3.9 release-gate section to `DEPLOYMENT_CHECKLIST.md`. It separates CI/source checks already passed from private configuration and real-world tests still outstanding, and says explicitly not to change the live 1.3.8 service as a shortcut.
+- Latest full source CI before this environment/checklist documentation update: [39155450165](https://github.com/Reisquin/Omnishelf/actions/runs/39155450165), all five jobs successful; the current docs/config revision has its own CI run queued at [39157696316](https://github.com/Reisquin/Omnishelf/actions/runs/39157696316).
+- No provider credentials have been added to source, no SMTP email has been sent, no Render service was changed, and no hosted database migration was run. Public registration remains disabled.
+- Next: verify the queued CI run and fresh screenshot artifact, then the remaining external gate requires selecting the intended Render workspace and configuring the isolated staging service with independently confirmed database target and SMTP credentials.
+
+### Release handoff documentation — validation result
+Date: 2026-10-18
+
+- Updated `backend/.env.example` to show the hosted database-target expectation variables and disabled-by-default SMTP acceptance opt-in / recipient settings. Values remain blank/disabled; no secrets were added.
+- Added a 1.3.9 section to `DEPLOYMENT_CHECKLIST.md` covering source/CI gates, private staging configuration, a dedicated SMTP test mailbox, the required database revision check, and remaining launch reviews.
+- **Passed:** final CI run for the environment/checklist changes [39157696316](https://github.com/Reisquin/Omnishelf/actions/runs/39157696316), all five jobs successful: backend tests, PostgreSQL integration, migration check, deployment config validation, and visual preview generation.
+- **Fresh artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12147926117`, packaged as `omnishelf-1.3.9-release-gate-previews.zip`.
+- PR #1 remains a draft on the isolated feature branch. No SMTP message was sent, no Render workspace/service was changed, and no hosted migration was run. Public registration is still disabled.
+- Next action requiring external configuration: select the intended Render workspace, confirm the approved Neon endpoint and database independently, configure those non-secret expected-target values plus SMTP credentials in an isolated staging service, run the explicit acceptance test to a controlled mailbox, then verify email-token replay and session revocation.
+
+## Isolated 1.3.9 Neon/Render staging preparation
+Date: 2026-10-18
+
+- Created a new Neon child branch `omnishelf-1-3-9-email-recovery-staging` (`br-summer-heart-aop6p1em`) in project `omnishelf-preview`, parented to isolated `auth-staging-2026-10-16` rather than Neon `main`. It is a separate copy-on-write target; no hosted schema change has been applied yet.
+- A read-only SQL query against that branch confirmed database `neondb` and Alembic revision `002_shared_auth_rate_limits`.
+- Added `render.staging.yaml` defining a separate Free Render service that follows the 1.3.9 feature branch, pins the intended non-secret database hostname/name, enforces Secure cookies/email verification, keeps registration closed, disables the SMTP acceptance opt-in, and declares `DATABASE_URL` as `sync: false` so the privileged URI is supplied through Render's private initial Blueprint prompt rather than Git.
+- Added CI validation for this staging blueprint to ensure the service stays Free and isolated, the privileged database URL isn't committed, SMTP credentials/recipient aren't embedded, and registration/SMTP acceptance remain disabled.
+- Documented the custom Render Blueprint path workflow in README and the launch-gate checklist. Render permits custom Blueprint paths at initial creation; the correct secret-safe path is to select `render.staging.yaml` in Render and enter the Neon branch's pooled `neondb` URL directly into the Render secret prompt. Do not paste the URI into chat or source.
+- **Passed:** GitHub Actions run [39159269802](https://github.com/Reisquin/Omnishelf/actions/runs/39159269802), all five jobs on revision `6dbf05410cbf9b732197bcd8edf4e5de28a72624`: backend tests, PostgreSQL integration, migration check, deployment safety/blueprint validation, and Playwright screenshot capture.
+- **Fresh artifact:** `omnishelf-1.3.9-layout-previews`, artifact ID `12148132903`, downloaded as `omnishelf-1.3.9-isolated-staging-previews.zip`.
+- A Render service inventory check confirmed no 1.3.9 service has been created yet; existing 1.3.8 services and the archived 1.0.0 service remain on their original branches. No real SMTP email was sent, no hosted migration was run, and public registration remains disabled.
+- **External configuration gate:** the new service must still be created from `render.staging.yaml` in the Render Dashboard and the privileged pooled URL pasted directly into its secret prompt. Then confirm the guard reports the correct endpoint and revision 002 and that migration 003 applies only on this isolated Neon child; configure SMTP credentials privately and perform real-mailbox acceptance before any rollout.
+
+## 1.3.9 isolated Render staging — first deployment attempt
+Date: 2026-10-18
+
+- Created Free Render service `omnishelf-1-3-9-email-recovery-staging` (service ID `srv-dbaib6eq1p3s73bpmsig`) on branch `feature/1.3.9-email-verification-password-reset`: https://omnishelf-1-3-9-email-recovery-staging.onrender.com. Existing 1.3.8 services and the archived 1.0.0 service remain on their original branches.
+- The first Docker build succeeded. Startup then exited with the intended fail-closed diagnostic `Missing required setting: DATABASE_URL`; the database target preflight ran before Alembic and stopped startup before any database change.
+- Rechecked the isolated Neon branch with a read-only SQL query after the failed startup: database `neondb` still reports revision `002_shared_auth_rate_limits`. Migration 003 was not applied.
+- The service does not yet have a running app until its pooled `DATABASE_URL` is copied directly from the Neon Console for branch `omnishelf-1-3-9-email-recovery-staging` into the Render dashboard's private Environment setting. Do not send this URI in chat or add it to source control. The required host/database expectations are already set on the service.
+- Added runtime status to README and `DEPLOYMENT_CHECKLIST.md`. Render's service-creation API did not expose the native health-check field; set `/healthz` in Render dashboard once the Environment setting is configured.
+- No SMTP credentials are configured and no real email has been sent. Registration remains disabled and SMTP acceptance remains off.
+- Latest CI that validated source before this service creation: [run 39159269802](https://github.com/Reisquin/Omnishelf/actions/runs/39159269802), all five jobs green; README/checklist now contain status-only edits and will receive a fresh validation run.
+- Next: add `DATABASE_URL` directly in Render, confirm logged identity/revision 002, verify Alembic advances only this branch to `003_email_verification_and_reset`, then configure the SMTP provider and complete the controlled mailbox acceptance checks.
+
+### 1.3.9 staging launch guard — final validation
+Date: 2026-10-18
+
+- **Passed:** GitHub Actions run [39161561114](https://github.com/Reisquin/Omnishelf/actions/runs/39161561114) on revision `ae866a1fd3000e05fdc406380267e6bff3e8e71c`. All five jobs passed, including the staging-blueprint safety assertion, API tests, PostgreSQL integration, migrations, and screenshot capture.
+- **Fresh visual previews:** artifact `omnishelf-1.3.9-layout-previews`, ID `12149245954`; downloaded to `omnishelf-1.3.9-staging-runtime-previews.zip` and extracted to `/mnt/data/omnishelf_139_staging_runtime_previews/`.
+- Runtime test result: the Render build completed; startup was stopped by the target guard because the private `DATABASE_URL` is missing. Log says `Missing required setting: DATABASE_URL`. No Alembic command ran.
+- Follow-up read-only Neon query still confirms `neondb` at `002_shared_auth_rate_limits`; migration 003 remains unapplied to the isolated child branch.
+- The isolated staging service currently exists on the Free plan but is not serving the app until the database URL is pasted directly into Render's private Environment page. Set Render's native health-check path to `/healthz` there as well.
+- Public registration remains disabled, SMTP acceptance remains disabled, no real mail was sent, and the 1.3.8 and 1.0.0 services remain untouched. After the dashboard-only URL/health-check setup, verify revision 002 is logged before migration 003 succeeds, then move to controlled SMTP and account-flow acceptance.
+## 1.3.9 staging — database and health gates passed
+Date: 2026-10-20 (IST)
+
+- Verified the new Free Render service `omnishelf-1-3-9-email-recovery-staging` is live at https://omnishelf-1-3-9-email-recovery-staging.onrender.com. The existing 1.3.8 and archived 1.0.0 services remain unchanged.
+- Operator added the pooled Neon connection string directly in Render's private Environment settings. No URL, username or password was added to source control or chat.
+- Render pre-migration target guard logged the independently expected endpoint hostname and database `neondb`, without printing credentials. Alembic then applied `003_email_verification_and_reset` to the isolated Neon child branch only.
+- Independent read-only Neon query confirmed `alembic_version.version_num = 003_email_verification_and_reset` and `current_database() = neondb`.
+- Operator configured the native Render health-check path `/healthz`. Render logs show successful deployment and repeated `GET /healthz` HTTP 200 responses.
+- Source documentation has been reconciled with actual live status in README and DEPLOYMENT_CHECKLIST. The earlier statements that 1.3.9 had not deployed or had not migrated are now replaced with the verified current result.
+- Remaining gate: configure a transactional SMTP provider and a sender address on a domain controlled by the operator, then run configuration preflight and an explicitly opted-in single-message delivery test to a controlled mailbox. README documents Resend SMTP as one low-friction option; provider account/domain credentials must be entered only into private settings.
+- Public registration remains disabled; `OMNISHELF_SMTP_ACCEPTANCE_ENABLED` remains false; no real email was sent. Verification/resend/reset replay and session-revocation acceptance, backup/restore retention, independent security review and provider/licensing review remain before public launch.
+## 1.3.9 live PostgreSQL/account acceptance passed
+Date: 2026-10-20 (IST)
+
+- GitHub Actions live acceptance run [39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200) passed against the isolated live Render/Neon staging service using a short-lived GitHub OIDC identity restricted to the exact repository, feature branch, and workflow.
+- The first acceptance attempt exposed a test bootstrap mismatch: newly created synthetic accounts were unverified and correct login protection returned HTTP 403. The harness cleanup succeeded (two temporary accounts removed). The test-only bootstrap was fixed to mark only these generated @example.invalid identities verified after OIDC validation. Public registration and normal email verification logic were unchanged.
+- After deploying the fix, the full live harness passed: HTTPS Secure/HttpOnly/SameSite session cookies, public registration remains closed, concurrent first saves return one success and one conflict, stale revision cannot overwrite current state, cloud snapshot survives logout/new login, per-account snapshot isolation, export excludes password/session secrets, incorrect-password deletion is refused, correct deletion revokes sessions and removes the account, and another account's data is preserved.
+- The test harness executed its finally cleanup successfully. A separate read-only Neon count confirmed zero remaining synthetic staging test accounts.
+- Immediately after the successful acceptance run, the Render environment setting OMNISHELF_STAGING_ACCEPTANCE_ENABLED was changed back to false; the close-down redeploy completed at 2026-10-19T20:23:22Z; `/healthz` continues to return HTTP 200. The default in render.staging.yaml also remains false. The staging route must stay disabled outside a deliberately authorized run.
+- Non-secret Resend SMTP host/port/username/STARTTLS/sender-name settings are configured in the isolated service. The provider sending API key and verified sender address are still absent, SMTP acceptance is disabled, and no real email has been sent.
+- Remaining: finish the redeploy that disables OIDC staging hooks; add a sending API key and sender address privately in Render after verifying a domain the operator controls; run the configuration preflight and one opt-in SMTP acceptance message to a controlled mailbox; then test verification/resend/reset/replay/generic-response/session revocation with email enabled. Public registration stays disabled. Backup/restore retention, independent security review, and provider/licensing review are still release gates.
+
+## 1.3.9 email transport: Resend HTTPS on Render Free
+
+- Render Free's outbound SMTP port restriction surfaced when the initial sandbox test to Resend SMTP timed out. The observed failure was a network timeout, not proof that the API key was invalid.
+- Changed the hosted default to Resend's HTTPS API (EMAIL_DELIVERY_PROVIDER=resend_api, port 443). Local/paid-compatible SMTP remains supported; the API key is read from Render's private SMTP_PASSWORD setting for backward compatibility or from RESEND_API_KEY, and is never logged or fetched into GitHub.
+- Added a provider-aware configuration preflight plus mocked API tests for the fixed HTTPS endpoint, bearer authentication, response validation, fail-closed behavior, and sanitized provider errors. Added a staging-only, OIDC-protected, at-most-once email check that is restricted to Resend's simulated-delivery recipient delivered@resend.dev and sends no account token.
+- The sender placeholder onboarding@resend.dev enables a domain-free sandbox check. The simulation does NOT prove delivery to a real inbox; normal account verification/reset mail to arbitrary users still requires a sender domain verified by Resend.
+- Public registration remains disabled. The live-test switches were returned to false after the SMTP timeout. The manual-only staging acceptance workflow is the default; any temporary tagged trigger is removed after a single controlled run.
+- Latest code checks initially found two test/documentation mismatches during this refactor (a generic test subject expectation and the non-secret sandbox sender in the blueprint validation). Both were corrected; new CI is in progress. Do not enable the release or merge the draft PR until all CI jobs pass and the HTTPS sandbox test result has been checked.
+
+
+## 1.3.9 Resend HTTPS acceptance — provider 403; temporary switches closed
+Date: 2026-10-20 (IST)
+
+- After the operator added the Resend key privately in Render, the isolated staging app reached the Resend email API, but Resend rejected the sandbox request with HTTP 403. The API key was never read back, copied to GitHub, or printed.
+- A single diagnostic retry added server-side classification using a fixed safe category allowlist; Resend's response still mapped only to forbidden_by_provider, so the precise provider reason is unknown. No raw provider response body was logged. Do not assert that the key is invalid or that domain scope is definitively the cause; use Resend Dashboard → Logs to identify the rejection reason.
+- Latest controlled workflow run: [39460040447, attempt 2](https://github.com/Reisquin/Omnishelf/actions/runs/39460040447), failed because of the provider's HTTP 403. Its finally cleanup reported **2 temporary test accounts removed**. The earlier failed attempt's cleanup also succeeded.
+- Render environment was explicitly updated to OMNISHELF_STAGING_ACCEPTANCE_ENABLED=false, OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false, SMTP_TEST_RECIPIENT blank, REGISTRATION_ENABLED=false, and EMAIL_VERIFICATION_REQUIRED=true. Close-down deploy dep-dbbpn9bl9sls73f0bca0 is live; /healthz returns HTTP 200. The non-secret sandbox sender placeholder remains onboarding@resend.dev.
+- Restored the live acceptance workflow to manual dispatch with an explicit yes confirmation; the temporary tagged-push trigger is removed.
+- Automated CI suite for the code/diagnostic changes passed all five jobs: [run 39460049052](https://github.com/Reisquin/Omnishelf/actions/runs/39460049052). Subsequent documentation/workflow edits are tracked by later push-triggered CI.
+- No real inbox was targeted, no verification/reset token was emailed, no domain was bought, and public registration remains disabled. Next: inspect the failed 403 request in Resend's dashboard, confirm the API-key permission/scope and sandbox eligibility, then retry only after the reason is clear. A verified sender domain and actual-inbox acceptance are still required before launch.
