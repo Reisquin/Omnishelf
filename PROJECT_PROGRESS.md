@@ -469,3 +469,15 @@ Date: 2026-10-20 (IST)
 - The sender placeholder onboarding@resend.dev enables a domain-free sandbox check. The simulation does NOT prove delivery to a real inbox; normal account verification/reset mail to arbitrary users still requires a sender domain verified by Resend.
 - Public registration remains disabled. The live-test switches were returned to false after the SMTP timeout. The manual-only staging acceptance workflow is the default; any temporary tagged trigger is removed after a single controlled run.
 - Latest code checks initially found two test/documentation mismatches during this refactor (a generic test subject expectation and the non-secret sandbox sender in the blueprint validation). Both were corrected; new CI is in progress. Do not enable the release or merge the draft PR until all CI jobs pass and the HTTPS sandbox test result has been checked.
+
+
+## 1.3.9 Resend HTTPS acceptance — provider 403; temporary switches closed
+Date: 2026-10-20 (IST)
+
+- After the operator added the Resend key privately in Render, the isolated staging app reached the Resend email API, but Resend rejected the sandbox request with HTTP 403. The API key was never read back, copied to GitHub, or printed.
+- A single diagnostic retry added server-side classification using a fixed safe category allowlist; Resend's response still mapped only to forbidden_by_provider, so the precise provider reason is unknown. No raw provider response body was logged. Do not assert that the key is invalid or that domain scope is definitively the cause; use Resend Dashboard → Logs to identify the rejection reason.
+- Latest controlled workflow run: [39460040447, attempt 2](https://github.com/Reisquin/Omnishelf/actions/runs/39460040447), failed because of the provider's HTTP 403. Its finally cleanup reported **2 temporary test accounts removed**. The earlier failed attempt's cleanup also succeeded.
+- Render environment was explicitly updated to OMNISHELF_STAGING_ACCEPTANCE_ENABLED=false, OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false, SMTP_TEST_RECIPIENT blank, REGISTRATION_ENABLED=false, and EMAIL_VERIFICATION_REQUIRED=true. Close-down deploy dep-dbbpn9bl9sls73f0bca0 is live; /healthz returns HTTP 200. The non-secret sandbox sender placeholder remains onboarding@resend.dev.
+- Restored the live acceptance workflow to manual dispatch with an explicit yes confirmation; the temporary tagged-push trigger is removed.
+- Automated CI suite for the code/diagnostic changes passed all five jobs: [run 39460049052](https://github.com/Reisquin/Omnishelf/actions/runs/39460049052). Subsequent documentation/workflow edits are tracked by later push-triggered CI.
+- No real inbox was targeted, no verification/reset token was emailed, no domain was bought, and public registration remains disabled. Next: inspect the failed 403 request in Resend's dashboard, confirm the API-key permission/scope and sandbox eligibility, then retry only after the reason is clear. A verified sender domain and actual-inbox acceptance are still required before launch.
