@@ -53,35 +53,34 @@ The separate Free Render service is live at https://omnishelf-1-3-9-email-recove
 - Render's native health check is configured to `/healthz`; logs show HTTP 200 responses and a successful deployment.
 - Live OIDC-protected acceptance passed on real staging PostgreSQL: secure cookie attributes; public signup remains closed; concurrent initial cloud saves serialize; stale revisions cannot overwrite current data; snapshot persistence across logout/sign-in; two-account isolation; export omits password/session secrets; and password-confirmed account deletion revokes sessions. All temporary accounts were deleted; a read-only query confirms zero remaining synthetic test accounts.
 - The OIDC-only staging bootstrap was switched off in Render, and the close-down redeploy completed successfully. The `/healthz` endpoint continued returning HTTP 200. Its default remains `false` in the source blueprint.
-- Public registration remains disabled. SMTP acceptance remains disabled, no real email has been sent, and the existing 1.3.8 and 1.0.0 services remain unchanged.
+- Public registration remains disabled. The one-off email acceptance switches are disabled by default. Existing 1.3.8 and 1.0.0 services remain unchanged.
 
-### Next gate — SMTP provider and real-mailbox acceptance
+### Next gate — Resend HTTPS sandbox acceptance
 
-Recommended low-friction provider: [Resend](https://resend.com/), which supports SMTP and currently lists a free tier of 3,000 emails/month, with a 100/day limit. Check its [current pricing](https://resend.com/pricing) before relying on those limits. A verified sending domain is required for normal use; don't purchase a domain or upgrade to a paid plan without deciding that separately. See [Resend's SMTP setup](https://resend.com/changelog/smtp-service).
+Recommended provider: [Resend](https://resend.com/). Render's Free web services block outbound SMTP ports, so OmniShelf now uses Resend's HTTPS API on port 443 when hosted on Render Free. Resend's sandbox sender supports a limited domain-free test; normal email delivery to arbitrary users still requires a sender domain verified by Resend. See [Resend's email API docs](https://resend.com/docs/api-reference/emails/send-email).
 
-For a Resend SMTP integration compatible with OmniShelf's STARTTLS configuration, use:
+For the Render Free staging deployment, use the HTTPS API settings:
 
-- `SMTP_HOST=smtp.resend.com`
-- `SMTP_PORT=587`
-- `SMTP_USERNAME=resend`
-- `SMTP_PASSWORD`: a Resend API key with sending permission (private secret)
-- `SMTP_FROM_EMAIL`: a sender address under a verified domain
+- `EMAIL_DELIVERY_PROVIDER=resend_api`
+- `SMTP_PASSWORD`: the private Resend sending API key (kept in Render's Environment settings; `RESEND_API_KEY` is also supported)
+- `SMTP_FROM_EMAIL=onboarding@resend.dev` for the restricted sandbox
 - `SMTP_FROM_NAME=OmniShelf`
-- `SMTP_STARTTLS=true`
 
-Keep `EMAIL_VERIFICATION_REQUIRED=true`, `COOKIE_SECURE=true`, `REGISTRATION_ENABLED=false`, and `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false` outside the explicit one-off test. `PUBLIC_APP_ORIGIN` must remain the exact HTTPS staging origin.
+The app retains SMTP support for local development and hosted plans that permit it; Resend SMTP on port 587 timed out on Render Free.
 
-The non-secret connection values (`SMTP_HOST=smtp.resend.com`, `SMTP_PORT=587`, `SMTP_USERNAME=resend`, `SMTP_STARTTLS=true`, `SMTP_FROM_NAME=OmniShelf`) have already been set on the isolated staging service. You still need to create/access the provider account, verify a sending domain you control, create a sending API key, and privately add `SMTP_PASSWORD` and `SMTP_FROM_EMAIL` through Render's Environment settings. Never send the API key in chat or commit it to Git. Once the sender domain is verified and credentials are saved, run the configuration preflight and then perform exactly one opt-in acceptance message to a mailbox you control. Immediately switch the acceptance flag back off and verify the message in Inbox/Spam. Only then proceed to verification, resend, reset, token-replay, generic-response, and session-revocation checks. Do not enable public registration during staging acceptance.
+Keep `EMAIL_VERIFICATION_REQUIRED=true`, `COOKIE_SECURE=true`, `REGISTRATION_ENABLED=false`, and `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false` outside the explicit one-off test. `PUBLIC_APP_ORIGIN` must remain the exact HTTPS staging origin. The HTTPS API key is read only at runtime and is never printed.
+
+The isolated Render service has the sandbox sender `onboarding@resend.dev` configured. Never send the API key in chat or commit it to Git. The latest attempted SMTP test timed out because Render Free blocks SMTP ports, so the transport is being switched to Resend's HTTPS API; the HTTPS sandbox test still needs to pass. It targets `delivered@resend.dev`, a simulated-delivery address rather than a real inbox, and sends no account token. The API-key value is not read back or printed during verification. Keep the acceptance switches off after the one-off check. Before any real public verification/reset emails are enabled, verify a sender domain you control and test actual inbox delivery. Do not enable public registration during staging acceptance.
 
 ## Account email setup
 
-The API now supports one-time email verification, resending a verification message, and password-reset requests and confirmation. Before enabling hosted registration, configure these environment variables in the service's secret settings:
+The API now supports one-time email verification, resending a verification message, and password-reset requests and confirmation. Before enabling hosted registration, configure the environment settings for the chosen transport in the service's private settings:
 
-- `SMTP_HOST`, `SMTP_PORT` (normally 587), `SMTP_USERNAME`, `SMTP_PASSWORD`
-- `SMTP_FROM_EMAIL`, optional `SMTP_FROM_NAME`, and `SMTP_STARTTLS=true`
+- For Resend on Render Free: `EMAIL_DELIVERY_PROVIDER=resend_api`, `SMTP_PASSWORD` (or `RESEND_API_KEY`) as the private API key, and `SMTP_FROM_EMAIL`/`SMTP_FROM_NAME`.
+- For SMTP on a service that permits outbound SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, optional `SMTP_FROM_NAME`, and `SMTP_STARTTLS=true`.
 - `EMAIL_VERIFICATION_REQUIRED=true` and the exact HTTPS `PUBLIC_APP_ORIGIN`
 
-Email verification links expire after 24 hours by default; password-reset links expire after 30 minutes. Tokens are random, single-use, and stored only as hashes. Password recovery revokes all active sessions. SMTP authentication is refused when STARTTLS is disabled. If the sender is missing, signup/recovery endpoints fail closed with HTTP 503; public registration remains disabled in the deployed preview. Existing accounts are grandfathered as verified by migration 003.
+Email verification links expire after 24 hours by default; password-reset links expire after 30 minutes. Tokens are random, single-use, and stored only as hashes. Password recovery revokes all active sessions. SMTP authentication is refused when STARTTLS is disabled. On Render Free, Resend delivery uses HTTPS rather than SMTP. If the selected provider or sender is missing, signup/recovery endpoints fail closed with HTTP 503; public registration remains disabled in the deployed preview. Existing accounts are grandfathered as verified by migration 003.
 
 ## Hosted email preflight (configuration only)
 
@@ -91,32 +90,33 @@ After adding the intended hosted environment variables in the service's private 
 python -m backend.config_preflight
 ```
 
-The preflight checks that required SMTP settings are present, the SMTP port is valid, STARTTLS/email verification/Secure cookies are enabled, public registration remains disabled, and `PUBLIC_APP_ORIGIN` is an HTTPS origin. It prints only setting names and validation messages, never configured values. It **does not** contact the SMTP server, prove sender-domain ownership, or verify real mailbox delivery; the acceptance checklist below remains required.
+The preflight checks the selected provider's required settings, HTTPS origin, email-verification/Secure-cookie flags, and closed public registration. It prints setting names and validation messages, never configured values. It **does not** contact the email provider, prove sender-domain ownership, or verify real mailbox delivery; the acceptance checklist below remains required.
 
-## Explicit SMTP delivery acceptance
+## Explicit email delivery acceptance
 
 When credentials have been added to the intended private service environment, use a dedicated test mailbox and run this one-off command from an authorized shell. The opt-in flag is deliberately required so the command cannot accidentally send during app startup or normal CI:
 
 ```bash
 OMNISHELF_SMTP_ACCEPTANCE_ENABLED=true \
-SMTP_TEST_RECIPIENT=your-controlled-mailbox@example.com \
+SMTP_TEST_RECIPIENT=delivered@resend.dev \
+EMAIL_DELIVERY_PROVIDER=resend_api \
 python -m backend.smtp_acceptance
 ```
 
-The command re-checks the required hosted configuration, validates the recipient, connects with certificate-validated STARTTLS, authenticates, and sends one harmless test message to the explicitly specified recipient. It never includes an account token/password, and it does not print credential values or SMTP exception details. It reports only whether the SMTP server accepted the message; **open the dedicated mailbox** (including spam/quarantine) to confirm delivery. Do not leave the opt-in flag enabled persistently and do not run the command until the recipient is confirmed to be a mailbox you control.
+In Resend API mode, the command re-checks the required configuration, sends one harmless test message over HTTPS, and reports only provider acceptance or a sanitized status code. It never includes an account token/password and never prints key values or provider response bodies. With `delivered@resend.dev`, the response is simulated and is not a real inbox delivery. For a true mailbox test, use an address you control after a verified sender domain is configured. Do not leave the opt-in flag enabled persistently.
 
-## SMTP acceptance checklist
+## Email acceptance checklist
 
-Do not put SMTP credentials in GitHub source files, workflow YAML, issue comments, or screenshots. Add them only to the intended Render service's private environment settings. Then verify delivery against a dedicated test mailbox before any production cutover:
+Do not put SMTP or Resend API credentials in GitHub source files, workflow YAML, issue comments, or screenshots. Add them only to the intended Render service's private environment settings. Verify the domain-free sandbox API request first, then verify actual inbox delivery to a controlled mailbox once a sender domain is available:
 
 1. Confirm `/healthz` succeeds and ordinary public registration is still disabled.
 2. Send a verification email from a controlled test account; open its HTTPS link once, then confirm replay is rejected.
 3. Request a password reset, use the link once, sign in with the new password, and confirm the prior session is revoked.
-4. Confirm the verification/reset-request endpoints return the same generic response for an unknown address and for a known address whose SMTP delivery fails.
+4. Confirm the verification/reset-request endpoints return the same generic response for an unknown address and for a known address whose provider delivery fails.
 5. After deployment, verify the service's configured database target and applied Alembic revision using read-only checks before treating migration 003 as hosted.
 
-The CI suite uses a mocked SMTP transport to check that STARTTLS with certificate validation and configured authentication are used; this is not a substitute for a real-mailbox delivery test.
+The CI suite checks both the Resend HTTPS API request shape and the optional SMTP STARTTLS path using mocks; this is not a substitute for provider acceptance and actual inbox delivery.
 
 ## Known scope limits
 
-This remains a controlled preview, not a public launch. A real SMTP provider still needs to be configured and end-to-end delivery verified; recurring backup scheduling/retention, additional abuse controls, independent security review, and provider/licensing review remain open. Media-upload storage and shared cross-user community data are also not implemented.
+This remains a controlled preview, not a public launch. The Resend HTTPS sandbox check and real sender-domain/inbox delivery acceptance remain separate gates; recurring backup scheduling/retention, additional abuse controls, independent security review, and provider/licensing review remain open. Media-upload storage and shared cross-user community data are also not implemented.
