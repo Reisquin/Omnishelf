@@ -67,3 +67,35 @@ def test_cli_reports_only_setting_names_and_never_secret_values(monkeypatch, cap
     assert "SMTP_PASSWORD" in output
     assert "test-user-secret" not in output
     assert "test-password-secret" not in output
+
+def test_resend_api_preflight_needs_no_smtp_ports_or_username() -> None:
+    from backend.config_preflight import validate_hosted_email_config
+
+    config = {
+        "EMAIL_DELIVERY_PROVIDER": "resend_api",
+        "SMTP_PASSWORD": "resend-test-api-key",
+        "SMTP_FROM_EMAIL": "onboarding@resend.dev",
+        "EMAIL_VERIFICATION_REQUIRED": "true",
+        "PUBLIC_APP_ORIGIN": "https://app.onrender.com",
+        "COOKIE_SECURE": "true",
+        "REGISTRATION_ENABLED": "false",
+    }
+
+    assert validate_hosted_email_config(config) == []
+
+
+def test_resend_api_preflight_requires_api_key_without_printing_it() -> None:
+    from backend.config_preflight import validate_hosted_email_config
+
+    config = {
+        "EMAIL_DELIVERY_PROVIDER": "resend_api",
+        "SMTP_FROM_EMAIL": "onboarding@resend.dev",
+        "EMAIL_VERIFICATION_REQUIRED": "true",
+        "PUBLIC_APP_ORIGIN": "https://app.onrender.com",
+        "COOKIE_SECURE": "true",
+        "REGISTRATION_ENABLED": "false",
+    }
+
+    errors = validate_hosted_email_config(config)
+    assert len(errors) == 1
+    assert "RESEND_API_KEY" in errors[0]
