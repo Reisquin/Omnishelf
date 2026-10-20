@@ -490,6 +490,21 @@ def _run_resend_logs_diagnostic() -> None:
         return
 
     headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Accept": "application/json"}
+    # Read-only endpoint checks separate credential validity from the Logs API permission.
+    for path in ("/api-keys", "/domains"):
+        request = UrlRequest("https://api.resend.com" + path, headers=headers, method="GET")
+        try:
+            with urlopen(request, timeout=8) as response:
+                status = response.status
+                payload = json.loads(response.read(256 * 1024).decode("utf-8"))
+            data_items = payload.get("data", []) if isinstance(payload, dict) else []
+            item_count = len(data_items) if isinstance(data_items, list) else 0
+            print(f"RESEND_READONLY_PROBE endpoint={path} status={status} items={item_count}", flush=True)
+        except HTTPError as exc:
+            print(f"RESEND_READONLY_PROBE endpoint={path} status={exc.code}", flush=True)
+        except (URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+            print(f"RESEND_READONLY_PROBE endpoint={path} status=unavailable", flush=True)
+
     list_request = UrlRequest("https://api.resend.com/logs", headers=headers, method="GET")
     try:
         with urlopen(list_request, timeout=8) as response:
