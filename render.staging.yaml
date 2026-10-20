@@ -25,6 +25,10 @@ services:
         value: "false"
       - key: EMAIL_VERIFICATION_REQUIRED
         value: "true"
+      - key: EMAIL_DELIVERY_PROVIDER
+        value: resend_api
+      - key: SMTP_FROM_EMAIL
+        value: onboarding@resend.dev
       - key: PUBLIC_APP_ORIGIN
         value: https://omnishelf-1-3-9-email-recovery-staging.onrender.com
       - key: FRONTEND_ORIGIN
