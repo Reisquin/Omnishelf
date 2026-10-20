@@ -63,9 +63,9 @@
 - [x] Confirm the hosted target guard identified the intended endpoint and database before migration.
 - [x] Apply migration `003_email_verification_and_reset` only to the isolated staging branch; read-only Neon query confirms the new Alembic revision.
 - [x] Set Render's native health-check path to `/healthz`; latest logs show HTTP 200 health checks and a successful deploy.
-- [ ] Configure Resend's HTTPS API transport on the isolated Free Render service. Keep the API key only in Render's private environment (SMTP_PASSWORD is supported for compatibility; RESEND_API_KEY is also supported). The onboarding@resend.dev sender permits a domain-free sandbox test; normal delivery to arbitrary users will still require a sender domain verified by Resend.
-- [ ] Run the hosted email configuration preflight without printing values.
-- [ ] Run the OIDC-gated, one-off Resend HTTPS API check to delivered@resend.dev, then turn both staging acceptance switches off. This is Resend's simulated-delivery recipient, not a real inbox. Real verification/password-reset emails to arbitrary users remain blocked on a verified sender domain.
+- [x] Resend HTTPS transport settings are present in the private Render staging environment; the `onboarding@resend.dev` sender remains a domain-free sandbox placeholder. The request reached Resend, but HTTP 403 means valid sending authorization is **not yet confirmed**. Normal delivery to arbitrary users still requires a sender domain verified by Resend.
+- [ ] Run the standalone hosted email configuration preflight. The guarded runtime checks passed far enough to contact Resend, but the separate preflight command has not been executed directly.
+- [x] Attempted the OIDC-gated, one-off Resend HTTPS test to `delivered@resend.dev`. Resend returned HTTP 403 (provider details deliberately not logged); the workflow cleaned up both temporary accounts. Both acceptance switches have since been set to `false`, and the Render close-down redeploy is live. This was **not** a successful delivery test; inspect the Resend request log and key permissions before retrying.
 - [x] Live OIDC-protected staging acceptance passed: Secure/HttpOnly/SameSite session cookies; public registration denied; concurrent first writes serialize to one success/one conflict; stale revision cannot overwrite saved state; snapshot persists across logout/sign-in; two-account data is isolated; export excludes password/session secrets; account deletion requires the correct password and revokes all sessions. [Run 39318642200](https://github.com/Reisquin/Omnishelf/actions/runs/39318642200).
 - [x] Acceptance cleanup verified with a read-only Neon query: zero synthetic staging test accounts remain. The OIDC bootstrap switch has been changed back to `false`; the Render close-down redeploy completed successfully and `/healthz` remains HTTP 200.
 - [ ] Verify email verification/resend/password-reset flows, one-time token replay prevention, generic responses on unknown-address/SMTP-failure cases, and post-reset session revocation after real SMTP delivery is configured.
@@ -82,8 +82,16 @@
 - [x] Independent read-only Neon query confirms `neondb` at `003_email_verification_and_reset`; migration 003 was applied to the isolated child branch only.
 - [x] Render native health-check setting is `/healthz`; the service is live and Render logs show `GET /healthz` returning HTTP 200.
 - [x] Staging blueprint keeps the free plan, registration disabled, email verification required, Secure cookies enabled, and SMTP acceptance disabled by default.
-- [ ] The Resend API key must be present only in Render's private environment as SMTP_PASSWORD (compatibility) or RESEND_API_KEY; EMAIL_DELIVERY_PROVIDER=resend_api selects HTTPS on port 443. The staging sender is onboarding@resend.dev, so the initial simulated-delivery test does not require a domain purchase. Do not enable general email signup/reset delivery until a sender domain is verified.
-- [ ] Run the provider-aware configuration preflight and the explicitly opted-in Resend HTTPS sandbox test. This test can confirm provider acceptance to delivered@resend.dev only; disable the switches immediately afterwards. Before launch, verify sender-domain ownership and test real inbox delivery.
+- [x] A non-empty Resend API key setting is present in Render's private environment (the guarded test reached the provider); its authorization/scope is not confirmed because Resend returned HTTP 403. The key is never read back or printed. `EMAIL_DELIVERY_PROVIDER=resend_api` selects HTTPS on port 443.
+- [ ] Resolve the Resend HTTP 403 using the request log in the Resend dashboard, then rerun the sandbox acceptance only after confirming the key's send permission and scope. The test recipient is `delivered@resend.dev`, a simulation only. A verified sender domain and real-inbox test remain launch requirements.
 - [ ] Complete controlled account-flow acceptance for verification/resend/reset/token replay/session revocation after mail delivery works.
 
 **No impact:** live 1.3.8 preview and the archived 1.0.0 service have not been modified. Public registration remains disabled until the remaining review and operations gates are complete.
+
+
+## Resend sandbox acceptance attempt — 2026-10-20
+
+- The controlled one-off request to Resend's simulated recipient returned HTTP 403 twice. The service records only status/category and does not log API keys or raw provider response bodies; the current safe classifier could not identify a more specific category.
+- Each failed workflow cleaned up both temporary test accounts. Render was redeployed with `OMNISHELF_STAGING_ACCEPTANCE_ENABLED=false`, `OMNISHELF_SMTP_ACCEPTANCE_ENABLED=false`, an empty `SMTP_TEST_RECIPIENT`, `REGISTRATION_ENABLED=false`, and `EMAIL_VERIFICATION_REQUIRED=true`.
+- The close-down deployment is live and `/healthz` returns HTTP 200. The live-account acceptance workflow is back to manual dispatch with explicit confirmation only. No real inbox message was sent; no domain was purchased; public registration stays disabled.
+- Next: use Resend Dashboard → Logs to inspect the rejected request's reason, check whether the API key is restricted to another domain or lacks sending permission, then update the private Render key only if needed. Do not paste the key into chat or GitHub.
