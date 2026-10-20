@@ -544,7 +544,7 @@ def _run_resend_logs_diagnostic() -> None:
     )
     print(
         f"RESEND_LOG_DIAGNOSTIC latest_403_category={category} "
-        f"provider_error_name={response_body.get('name') if response_body.get('name') in {'validation_error', 'restricted_api_key', 'invalid_api_key', 'missing_api_key', 'unauthorized', 'forbidden', 'rate_limit_exceeded'} else 'other_or_unknown'}",
+        f"provider_error_name={response_body.get('name') if isinstance(response_body.get('name'), str) and response_body.get('name') in {'validation_error', 'restricted_api_key', 'invalid_api_key', 'missing_api_key', 'unauthorized', 'forbidden', 'rate_limit_exceeded'} else 'other_or_unknown'}",
         flush=True,
     )
 
