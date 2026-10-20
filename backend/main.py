@@ -1004,8 +1004,14 @@ if STAGING_ACCEPTANCE_ENABLED:
                 "It uses Resend's documented simulated-delivery recipient. "
                 "No user information, verification link, or password-reset token is included.\\n",
             )
-        except (smtplib.SMTPException, OSError, RuntimeError):
-            LOGGER.warning("Staging SMTP acceptance failed.")
+        except (smtplib.SMTPException, OSError, RuntimeError) as exc:
+            # Log only the exception class and a numeric SMTP status code; never log
+            # provider response text or credentials.
+            smtp_code = getattr(exc, "smtp_code", None)
+            if isinstance(smtp_code, int):
+                LOGGER.warning("Staging SMTP acceptance failed (%s; SMTP code %d).", type(exc).__name__, smtp_code)
+            else:
+                LOGGER.warning("Staging SMTP acceptance failed (%s).", type(exc).__name__)
             raise HTTPException(status_code=502, detail="SMTP acceptance failed; provider details were not logged.")
 
         response.headers["Cache-Control"] = "no-store"
