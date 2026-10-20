@@ -126,18 +126,18 @@ def assert_cleanup(oidc_token: str) -> dict:
 
 
 
-def send_smtp_acceptance(oidc_token: str) -> dict:
-    """Trigger one sandbox-only SMTP acceptance message per workflow attempt."""
+def send_email_acceptance(oidc_token: str) -> dict:
+    """Trigger one sandbox-only email delivery acceptance message per workflow attempt."""
     response = requests.post(
-        BASE_URL + "/__staging/acceptance/smtp",
+        BASE_URL + "/__staging/acceptance/email",
         headers={"Authorization": f"Bearer {oidc_token}", "Origin": ORIGIN},
         timeout=30,
     )
     assert response.status_code == 200, (
-        f"Staging SMTP acceptance failed with HTTP {response.status_code}: {response.text[:250]}"
+        f"Staging email acceptance failed with HTTP {response.status_code}: {response.text[:250]}"
     )
     result = response.json()
-    assert result.get("result") == "accepted_by_smtp"
+    assert result.get("result") == "accepted_by_provider"
     assert result.get("recipient") == "delivered@resend.dev"
     return result
 
@@ -158,7 +158,7 @@ def main() -> None:
 
         # This is constrained by the server to Resend's synthetic delivered@resend.dev
         # test recipient; it sends no real user email or account token.
-        smtp_result = send_smtp_acceptance(oidc_token)
+        email_result = send_email_acceptance(oidc_token)
 
         # New accounts have no state; signing in works while ordinary registration stays closed.
         anonymous = requests.Session()
@@ -327,7 +327,7 @@ def main() -> None:
             "staging_url": BASE_URL,
             "checks": [
                 "ephemeral OIDC-authorized accounts",
-                "Resend SMTP simulated-delivery test accepted by the server",
+                "Resend HTTPS simulated-delivery test accepted by the provider",
                 "Secure/HttpOnly/SameSite session cookie",
                 "registration stays closed",
                 "two concurrent first saves produce one success and one 409",
@@ -341,9 +341,9 @@ def main() -> None:
                 "deleting account two does not affect account one's library",
             ],
             "temporary_accounts_created": 2,
-            "smtp_test": {
-                "result": smtp_result["result"],
-                "recipient": smtp_result["recipient"],
+            "email_test": {
+                "result": email_result["result"],
+                "recipient": email_result["recipient"],
                 "is_real_inbox_delivery": False,
             },
             "credentials_logged": False,
