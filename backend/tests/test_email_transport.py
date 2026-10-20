@@ -29,6 +29,8 @@ def test_resend_https_transport_uses_bearer_key_and_fixed_api_endpoint(monkeypat
         captured["url"] = request.full_url
         captured["authorization"] = request.get_header("Authorization")
         captured["content_type"] = request.get_header("Content-type")
+        captured["accept"] = request.get_header("Accept")
+        captured["user_agent"] = request.get_header("User-agent")
         captured["timeout"] = timeout
         captured["payload"] = json.loads(request.data.decode("utf-8"))
         return FakeResponse()
@@ -45,6 +47,8 @@ def test_resend_https_transport_uses_bearer_key_and_fixed_api_endpoint(monkeypat
     assert captured["url"] == "https://api.resend.com/emails"
     assert captured["authorization"] == "Bearer test-only-api-key"
     assert captured["content_type"] == "application/json"
+    assert captured["accept"] == "application/json"
+    assert captured["user_agent"] == "OmniShelf/1.3.9"
     assert captured["timeout"] == 15
     assert captured["payload"] == {
         "from": "OmniShelf <onboarding@resend.dev>",
