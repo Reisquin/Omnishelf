@@ -22,7 +22,9 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
 from typing import Any, Generator
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
 import jwt
 from argon2 import PasswordHasher
@@ -60,28 +62,44 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "OmniShelf").strip() or "OmniShelf"
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes", "on"}
-def _smtp_configuration_is_complete(
+EMAIL_DELIVERY_PROVIDER = os.getenv(
+    "EMAIL_DELIVERY_PROVIDER", "resend_api" if RENDER_ENVIRONMENT else "smtp"
+).strip().lower()
+# Compatibility: the existing private Render variable SMTP_PASSWORD already holds the Resend API key.
+# Prefer RESEND_API_KEY for new setups without exposing or logging either value.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", SMTP_PASSWORD).strip()
+
+
+def _email_configuration_is_complete(
     *,
+    provider: str,
     host: str,
     username: str,
     password: str,
+    resend_api_key: str,
     from_email: str,
     starttls: bool,
     hosted: bool,
     public_app_origin: str,
 ) -> bool:
-    """Require credentials and a trusted HTTPS origin for hosted SMTP."""
+    """Validate the selected email transport without making a network request."""
     sender_is_valid = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", from_email))
-    hosted_prerequisites = not hosted or (
-        bool(username and password) and public_app_origin.startswith("https://")
-    )
-    return bool(host and sender_is_valid and starttls and hosted_prerequisites)
+    https_origin_ok = not hosted or public_app_origin.startswith("https://")
+    if provider == "resend_api":
+        return bool(resend_api_key and sender_is_valid and https_origin_ok)
+    if provider == "smtp":
+        hosted_credentials_ok = not hosted or (bool(username and password) and https_origin_ok)
+        return bool(host and sender_is_valid and starttls and hosted_credentials_ok)
+    return False
 
 
-SMTP_CONFIGURED = _smtp_configuration_is_complete(
+# Kept under its previous name for existing routes/tests; it now means email delivery is configured.
+SMTP_CONFIGURED = _email_configuration_is_complete(
+    provider=EMAIL_DELIVERY_PROVIDER,
     host=SMTP_HOST,
     username=SMTP_USERNAME,
     password=SMTP_PASSWORD,
+    resend_api_key=RESEND_API_KEY,
     from_email=SMTP_FROM_EMAIL,
     starttls=SMTP_STARTTLS,
     hosted=RENDER_ENVIRONMENT,
@@ -399,9 +417,48 @@ def _token_hash(token: str) -> str:
 
 
 def _send_email(recipient: str, subject: str, body: str) -> None:
-    """Deliver a plain-text account email over SMTP; never fall back to plaintext credentials."""
+    """Deliver plain-text account mail through the configured secure transport."""
     if not SMTP_CONFIGURED:
         raise RuntimeError("Email delivery is not configured.")
+
+    if EMAIL_DELIVERY_PROVIDER == "resend_api":
+        # Render Free blocks SMTP ports; Resend's HTTPS API uses port 443.
+        payload = {
+            "from": formataddr((SMTP_FROM_NAME, SMTP_FROM_EMAIL)),
+            "to": [recipient],
+            "subject": subject,
+            "text": body,
+        }
+        request = UrlRequest(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=15) as response:
+                status = response.status
+                response_body = response.read()
+        except HTTPError as exc:
+            # Never echo provider response bodies, which can expose provider/account details.
+            raise RuntimeError(f"Resend API request failed with HTTP {exc.code}.") from None
+        except URLError:
+            raise RuntimeError("Resend API connection failed.") from None
+        if not 200 <= status < 300:
+            raise RuntimeError(f"Resend API returned HTTP {status}.")
+        try:
+            result = json.loads(response_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise RuntimeError("Resend API returned an invalid response.") from None
+        if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not result["id"]:
+            raise RuntimeError("Resend API response did not include a message ID.")
+        return
+
+    if EMAIL_DELIVERY_PROVIDER != "smtp":
+        raise RuntimeError("The configured email transport is not supported.")
     message = EmailMessage()
     message["From"] = formataddr((SMTP_FROM_NAME, SMTP_FROM_EMAIL))
     message["To"] = recipient
