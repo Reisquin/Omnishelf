@@ -87,6 +87,11 @@ SMTP_CONFIGURED = _smtp_configuration_is_complete(
     hosted=RENDER_ENVIRONMENT,
     public_app_origin=PUBLIC_APP_ORIGIN,
 )
+
+# The remote acceptance route can only target Resend's documented simulated-delivery address.
+RESEND_SIMULATED_DELIVERY_RECIPIENT = "delivered@resend.dev"
+SMTP_ACCEPTANCE_ENABLED = os.getenv("OMNISHELF_SMTP_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+SMTP_TEST_RECIPIENT = os.getenv("SMTP_TEST_RECIPIENT", "").strip().lower()
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
 if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
@@ -868,7 +873,7 @@ def _validated_staging_actions_claims(token: str) -> dict[str, Any]:
         claims.get("repository") != "Reisquin/Omnishelf"
         or claims.get("ref") != STAGING_ACCEPTANCE_REF
         or claims.get("workflow_ref") != STAGING_ACCEPTANCE_WORKFLOW_REF
-        or claims.get("event_name") != "push"
+        or claims.get("event_name") not in {"push", "workflow_dispatch"}
     ):
         raise HTTPException(status_code=403, detail="This workflow is not authorized for staging acceptance.")
     run_id = str(claims.get("run_id", ""))
@@ -956,6 +961,59 @@ if STAGING_ACCEPTANCE_ENABLED:
         db.commit()
         response.headers["Cache-Control"] = "no-store"
         return {"deleted_accounts": deleted}
+
+    @app.post("/__staging/acceptance/smtp", include_in_schema=False)
+    def staging_acceptance_smtp(
+        request: Request,
+        response: Response,
+        db: DBSession = Depends(get_db),
+    ):
+        """One per workflow attempt, simulated-delivery-only SMTP check."""
+        claims = _staging_workflow_identity(request)
+        if (
+            REGISTRATION_ENABLED
+            or not EMAIL_VERIFICATION_REQUIRED
+            or not SMTP_ACCEPTANCE_ENABLED
+            or not SMTP_CONFIGURED
+            or SMTP_TEST_RECIPIENT != RESEND_SIMULATED_DELIVERY_RECIPIENT
+        ):
+            raise HTTPException(status_code=503, detail="Staging SMTP acceptance is not enabled or configured.")
+
+        # Claim the run before sending. A duplicate request for the same workflow attempt
+        # cannot send a second message; a retry is a new workflow attempt.
+        run_key = hashlib.sha256(
+            f"{claims['run_id']}:{claims['run_attempt']}:smtp-acceptance".encode("utf-8")
+        ).hexdigest()
+        db.add(AuthRateLimit(
+            action="smtp_test",
+            client_key=run_key,
+            window_started=datetime.now(timezone.utc),
+            attempts=1,
+        ))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="This workflow attempt already used the SMTP acceptance test.")
+
+        try:
+            _send_email(
+                RESEND_SIMULATED_DELIVERY_RECIPIENT,
+                "OmniShelf SMTP acceptance test",
+                "This is a one-time, non-account OmniShelf staging SMTP test. "
+                "It uses Resend's documented simulated-delivery recipient. "
+                "No user information, verification link, or password-reset token is included.\\n",
+            )
+        except (smtplib.SMTPException, OSError, RuntimeError):
+            LOGGER.warning("Staging SMTP acceptance failed.")
+            raise HTTPException(status_code=502, detail="SMTP acceptance failed; provider details were not logged.")
+
+        response.headers["Cache-Control"] = "no-store"
+        return {
+            "result": "accepted_by_smtp",
+            "recipient": RESEND_SIMULATED_DELIVERY_RECIPIENT,
+            "note": "Resend simulated-delivery test only; this does not verify delivery to a real inbox.",
+        }
 
 
 @app.get("/api")
