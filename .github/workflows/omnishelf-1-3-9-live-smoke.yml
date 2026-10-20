@@ -1,6 +1,11 @@
 name: OmniShelf 1.3.9 live staging acceptance
 
 on:
+  push:
+    branches:
+      - feature/1.3.9-email-verification-password-reset
+    paths:
+      - scripts/live_staging_auth_acceptance.py
   workflow_dispatch:
     inputs:
       confirm_staging_acceptance:
@@ -17,7 +22,7 @@ permissions:
 
 jobs:
   live-postgres-account-acceptance:
-    if: ${{ inputs.confirm_staging_acceptance == 'yes' }}
+    if: ${{ inputs.confirm_staging_acceptance == 'yes' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-email-acceptance]')) }}
     name: Live PostgreSQL/account acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 10
