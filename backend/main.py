@@ -1062,13 +1062,15 @@ if STAGING_ACCEPTANCE_ENABLED:
                 "No user information, verification link, or password-reset token is included.\\n",
             )
         except (smtplib.SMTPException, OSError, RuntimeError) as exc:
-            # Log only the exception class and a numeric SMTP status code; never log
-            # provider response text or credentials.
-            smtp_code = getattr(exc, "smtp_code", None)
-            if isinstance(smtp_code, int):
-                LOGGER.warning("Staging email acceptance failed (%s; SMTP code %d).", type(exc).__name__, smtp_code)
+            # Log only the exception class and numeric transport status; never provider response text or credentials.
+            status_code = getattr(exc, "smtp_code", None)
+            if not isinstance(status_code, int):
+                match = re.search(r"\\bHTTP (\\d{3})\\b", str(exc))
+                status_code = int(match.group(1)) if match else None
+            if isinstance(status_code, int):
+                LOGGER.warning("Staging email acceptance failed (%s; status %d).", type(exc).__name__, status_code)
             else:
-                LOGGER.warning("Staging SMTP acceptance failed (%s).", type(exc).__name__)
+                LOGGER.warning("Staging email acceptance failed (%s).", type(exc).__name__)
             raise HTTPException(status_code=502, detail="Email acceptance failed; provider details were not logged.")
 
         response.headers["Cache-Control"] = "no-store"
