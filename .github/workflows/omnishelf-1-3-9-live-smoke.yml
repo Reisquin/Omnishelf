@@ -6,6 +6,7 @@ on:
       - feature/1.3.9-email-verification-password-reset
     paths:
       - scripts/live_staging_auth_acceptance.py
+      - backend/main.py
   workflow_dispatch:
     inputs:
       confirm_staging_acceptance:
