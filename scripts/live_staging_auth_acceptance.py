@@ -1,4 +1,4 @@
-"""Self-cleaning, authenticated HTTPS + Resend sandbox acceptance test for staging.
+"""Self-cleaning, authenticated HTTPS + Resend sandbox acceptance test for staging (one-off).
 
 GitHub Actions supplies a short-lived OIDC token. The staging backend validates
 that token against GitHub's signing keys and this repository/workflow/ref before
