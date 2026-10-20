@@ -1019,13 +1019,13 @@ if STAGING_ACCEPTANCE_ENABLED:
         response.headers["Cache-Control"] = "no-store"
         return {"deleted_accounts": deleted}
 
-    @app.post("/__staging/acceptance/smtp", include_in_schema=False)
-    def staging_acceptance_smtp(
+    @app.post("/__staging/acceptance/email", include_in_schema=False)
+    def staging_acceptance_email(
         request: Request,
         response: Response,
         db: DBSession = Depends(get_db),
     ):
-        """One per workflow attempt, simulated-delivery-only SMTP check."""
+        """One per workflow attempt, simulated-delivery-only email transport check."""
         claims = _staging_workflow_identity(request)
         if (
             REGISTRATION_ENABLED
@@ -1034,15 +1034,15 @@ if STAGING_ACCEPTANCE_ENABLED:
             or not SMTP_CONFIGURED
             or SMTP_TEST_RECIPIENT != RESEND_SIMULATED_DELIVERY_RECIPIENT
         ):
-            raise HTTPException(status_code=503, detail="Staging SMTP acceptance is not enabled or configured.")
+            raise HTTPException(status_code=503, detail="Staging email acceptance is not enabled or configured.")
 
         # Claim the run before sending. A duplicate request for the same workflow attempt
         # cannot send a second message; a retry is a new workflow attempt.
         run_key = hashlib.sha256(
-            f"{claims['run_id']}:{claims['run_attempt']}:smtp-acceptance".encode("utf-8")
+            f"{claims['run_id']}:{claims['run_attempt']}:email-acceptance".encode("utf-8")
         ).hexdigest()
         db.add(AuthRateLimit(
-            action="smtp_test",
+            action="email_test",
             client_key=run_key,
             window_started=datetime.now(timezone.utc),
             attempts=1,
@@ -1051,13 +1051,13 @@ if STAGING_ACCEPTANCE_ENABLED:
             db.commit()
         except IntegrityError:
             db.rollback()
-            raise HTTPException(status_code=409, detail="This workflow attempt already used the SMTP acceptance test.")
+            raise HTTPException(status_code=409, detail="This workflow attempt already used the email acceptance test.")
 
         try:
             _send_email(
                 RESEND_SIMULATED_DELIVERY_RECIPIENT,
-                "OmniShelf SMTP acceptance test",
-                "This is a one-time, non-account OmniShelf staging SMTP test. "
+                "OmniShelf email delivery acceptance test",
+                "This is a one-time, non-account OmniShelf staging email test. "
                 "It uses Resend's documented simulated-delivery recipient. "
                 "No user information, verification link, or password-reset token is included.\\n",
             )
@@ -1066,14 +1066,14 @@ if STAGING_ACCEPTANCE_ENABLED:
             # provider response text or credentials.
             smtp_code = getattr(exc, "smtp_code", None)
             if isinstance(smtp_code, int):
-                LOGGER.warning("Staging SMTP acceptance failed (%s; SMTP code %d).", type(exc).__name__, smtp_code)
+                LOGGER.warning("Staging email acceptance failed (%s; SMTP code %d).", type(exc).__name__, smtp_code)
             else:
                 LOGGER.warning("Staging SMTP acceptance failed (%s).", type(exc).__name__)
-            raise HTTPException(status_code=502, detail="SMTP acceptance failed; provider details were not logged.")
+            raise HTTPException(status_code=502, detail="Email acceptance failed; provider details were not logged.")
 
         response.headers["Cache-Control"] = "no-store"
         return {
-            "result": "accepted_by_smtp",
+            "result": "accepted_by_provider",
             "recipient": RESEND_SIMULATED_DELIVERY_RECIPIENT,
             "note": "Resend simulated-delivery test only; this does not verify delivery to a real inbox.",
         }
