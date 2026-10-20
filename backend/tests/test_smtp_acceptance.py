@@ -97,7 +97,7 @@ def test_acceptance_uses_validated_starttls_auth_and_sends_only_test_message(mon
     assert ("starttls", sentinel_context) in server.calls
     assert ("login", "private-smtp-username", "private-smtp-password") in server.calls
     assert server.message["To"] == "controlled-test-mailbox@example.com"
-    assert server.message["Subject"] == "OmniShelf SMTP acceptance test"
+    assert server.message["Subject"] == "OmniShelf email delivery acceptance test"
     assert "No account token or password" in server.message.get_content()
     assert "private-smtp-password" not in server.message.as_string()
     assert "private-smtp-password" not in output
