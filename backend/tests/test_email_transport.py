@@ -76,6 +76,29 @@ def test_resend_api_error_is_sanitized(monkeypatch) -> None:
     assert "test-only-api-key" not in str(error.value)
 
 
+def test_resend_error_classifier_returns_only_safe_categories() -> None:
+    assert main._safe_resend_error_category(
+        b'{"name":"validation_error","message":"You can only send testing emails to your own email address"}',
+        403,
+    ) == "sandbox_recipient_restriction"
+    assert main._safe_resend_error_category(
+        b'{"name":"validation_error","message":"The domain has not been verified"}',
+        403,
+    ) == "sender_domain_unverified"
+    assert main._safe_resend_error_category(
+        b'{"name":"restricted_api_key","message":"API key is scoped to another domain"}',
+        403,
+    ) == "api_key_scope"
+    assert main._safe_resend_error_category(
+        b'{"name":"private_code","message":"secret-specific provider account detail"}',
+        403,
+    ) == "forbidden_by_provider"
+    assert main._safe_resend_error_category(
+        b'not-json with private provider detail',
+        502,
+    ) == "provider_rejection"
+
+
 def test_resend_transport_fails_closed_when_not_configured(monkeypatch) -> None:
     monkeypatch.setattr(main, "EMAIL_DELIVERY_PROVIDER", "resend_api")
     monkeypatch.setattr(main, "RESEND_API_KEY", "")
