@@ -132,7 +132,29 @@ if os.getenv("OMNISHELF_RESEND_AUTH_DIAGNOSTIC", "false").strip().lower() in {"1
                 flush=True,
             )
         except HTTPError as _diag_error:
-            print(f"RESEND_AUTH_DIAGNOSTIC domains_status={_diag_error.code}", flush=True)
+            try:
+                _diag_body = _diag_error.read(8192)
+                _diag_payload = json.loads(_diag_body.decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                _diag_body = b""
+                _diag_payload = {}
+            if not isinstance(_diag_payload, dict):
+                _diag_payload = {}
+            _diag_name = _diag_payload.get("name")
+            _diag_safe_names = {
+                "restricted_api_key", "invalid_api_key", "missing_api_key",
+                "unauthorized", "forbidden", "validation_error",
+                "rate_limit_exceeded", "domain_not_verified",
+                "invalid_from_address", "account_suspended",
+                "permission_denied", "access_denied", "not_authorized",
+            }
+            _diag_safe_name = _diag_name if isinstance(_diag_name, str) and _diag_name in _diag_safe_names else "other_or_unknown"
+            _diag_category = _safe_resend_error_category(_diag_body, _diag_error.code)
+            print(
+                f"RESEND_AUTH_DIAGNOSTIC domains_status={_diag_error.code} "
+                f"category={_diag_category} provider_error_name={_diag_safe_name}",
+                flush=True,
+            )
         except (URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
             print("RESEND_AUTH_DIAGNOSTIC domains_status=unavailable", flush=True)
 
