@@ -11,44 +11,53 @@ from collections.abc import Mapping
 from urllib.parse import urlparse
 
 
-_REQUIRED_SETTINGS = (
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_USERNAME",
-    "SMTP_PASSWORD",
+_COMMON_REQUIRED_SETTINGS = (
     "SMTP_FROM_EMAIL",
-    "SMTP_STARTTLS",
     "EMAIL_VERIFICATION_REQUIRED",
     "PUBLIC_APP_ORIGIN",
     "COOKIE_SECURE",
     "REGISTRATION_ENABLED",
 )
+_SMTP_REQUIRED_SETTINGS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_STARTTLS")
 
 
 def validate_hosted_email_config(environment: Mapping[str, str]) -> list[str]:
-    """Return safe diagnostics for a hosted 1.3.9 configuration.
+    """Return safe diagnostics for hosted email settings without network access.
 
-    This checks presence and safety flags only. It does not connect to an SMTP
-    server, verify sender ownership, or deliver a test message.
+    Render Free blocks outbound SMTP ports, so its default transport is Resend's
+    HTTPS API. SMTP remains available for local or paid-hosted environments.
     """
     errors: list[str] = []
-    missing = [key for key in _REQUIRED_SETTINGS if not environment.get(key, "").strip()]
-    errors.extend(f"Missing required setting: {key}" for key in missing)
+    provider = environment.get("EMAIL_DELIVERY_PROVIDER", "").strip().lower()
+    if not provider:
+        provider = "resend_api" if environment.get("RENDER", "").strip().lower() == "true" else "smtp"
 
-    port_text = environment.get("SMTP_PORT", "").strip()
-    if port_text:
-        try:
-            port = int(port_text)
-        except ValueError:
-            errors.append("SMTP_PORT must be an integer from 1 to 65535.")
-        else:
-            if not 1 <= port <= 65535:
+    common_missing = [key for key in _COMMON_REQUIRED_SETTINGS if not environment.get(key, "").strip()]
+    errors.extend(f"Missing required setting: {key}" for key in common_missing)
+
+    if provider == "resend_api":
+        if not (environment.get("RESEND_API_KEY", "").strip() or environment.get("SMTP_PASSWORD", "").strip()):
+            errors.append("Missing required setting: RESEND_API_KEY (or SMTP_PASSWORD for the existing setup).")
+    elif provider == "smtp":
+        smtp_missing = [key for key in _SMTP_REQUIRED_SETTINGS if not environment.get(key, "").strip()]
+        errors.extend(f"Missing required setting: {key}" for key in smtp_missing)
+        starttls_value = environment.get("SMTP_STARTTLS", "").strip().lower()
+        if starttls_value not in {"1", "true", "yes", "on"}:
+            errors.append("SMTP_STARTTLS must be true.")
+        port_text = environment.get("SMTP_PORT", "").strip()
+        if port_text:
+            try:
+                port = int(port_text)
+            except ValueError:
                 errors.append("SMTP_PORT must be an integer from 1 to 65535.")
+            else:
+                if not 1 <= port <= 65535:
+                    errors.append("SMTP_PORT must be an integer from 1 to 65535.")
+    else:
+        errors.append("EMAIL_DELIVERY_PROVIDER must be either 'resend_api' or 'smtp'.")
 
     truthy = {"1", "true", "yes", "on"}
     falsey = {"0", "false", "no", "off"}
-    if environment.get("SMTP_STARTTLS", "").strip().lower() not in truthy:
-        errors.append("SMTP_STARTTLS must be true.")
     if environment.get("EMAIL_VERIFICATION_REQUIRED", "").strip().lower() not in truthy:
         errors.append("EMAIL_VERIFICATION_REQUIRED must be true.")
     if environment.get("COOKIE_SECURE", "").strip().lower() not in truthy:
@@ -89,9 +98,12 @@ def main() -> int:
         for error in errors:
             print(f"- {error}")
         return 1
+    provider = os.environ.get("EMAIL_DELIVERY_PROVIDER", "").strip().lower()
+    if not provider:
+        provider = "resend_api" if os.environ.get("RENDER", "").strip().lower() == "true" else "smtp"
     print(
-        "Email configuration preflight passed: required settings and safety flags are present. "
-        "SMTP connectivity and actual delivery are not tested."
+        f"Email configuration preflight passed for {provider}: required settings and safety flags are present. "
+        "Transport connectivity and actual delivery are not tested."
     )
     return 0
 
