@@ -416,6 +416,56 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+_RESEND_SAFE_ERROR_CATEGORIES = frozenset({
+    "sandbox_recipient_restriction",
+    "sender_domain_unverified",
+    "api_key_scope",
+    "api_key_authentication",
+    "rate_limited",
+    "request_validation",
+    "forbidden_by_provider",
+    "provider_rejection",
+})
+
+
+def _safe_resend_error_category(error_body: bytes, status_code: int) -> str:
+    """Reduce untrusted provider response JSON to a small, non-sensitive category."""
+    try:
+        payload = json.loads(error_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # Inspect privately for keyword classification, but never log or return provider text.
+    provider_name = payload.get("name")
+    provider_message = payload.get("message")
+    details = " ".join(
+        part for part in (
+            provider_name if isinstance(provider_name, str) else "",
+            provider_message if isinstance(provider_message, str) else "",
+        )
+    ).lower()
+
+    if "testing emails to your own email" in details or (
+        "testing email" in details and "own email address" in details
+    ):
+        return "sandbox_recipient_restriction"
+    if "domain" in details and ("verify" in details or "verified" in details or "verification" in details):
+        return "sender_domain_unverified"
+    if any(word in details for word in ("restricted api key", "api key is restricted", "key is scoped", "permission to send")):
+        return "api_key_scope"
+    if any(word in details for word in ("invalid api key", "missing api key", "unauthorized")) or status_code == 401:
+        return "api_key_authentication"
+    if "rate limit" in details or status_code == 429:
+        return "rate_limited"
+    if status_code in (400, 422) or "validation_error" in details:
+        return "request_validation"
+    if status_code == 403:
+        return "forbidden_by_provider"
+    return "provider_rejection"
+
+
 def _send_email(recipient: str, subject: str, body: str) -> None:
     """Deliver plain-text account mail through the configured secure transport."""
     if not SMTP_CONFIGURED:
@@ -443,8 +493,15 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
                 status = response.status
                 response_body = response.read()
         except HTTPError as exc:
-            # Never echo provider response bodies, which can expose provider/account details.
-            raise RuntimeError(f"Resend API request failed with HTTP {exc.code}.") from None
+            # Classify only a fixed allowlist from the JSON response; never echo its message.
+            try:
+                error_body = exc.read(8192)
+            except OSError:
+                error_body = b""
+            category = _safe_resend_error_category(error_body, exc.code)
+            raise RuntimeError(
+                f"Resend API request failed with HTTP {exc.code} (category {category})."
+            ) from None
         except URLError:
             raise RuntimeError("Resend API connection failed.") from None
         if not 200 <= status < 300:
@@ -1068,7 +1125,15 @@ if STAGING_ACCEPTANCE_ENABLED:
                 match = re.search(r"HTTP ([0-9]{3})", str(exc))
                 status_code = int(match.group(1)) if match else None
             if isinstance(status_code, int):
-                LOGGER.warning("Staging email acceptance failed (%s; status %d).", type(exc).__name__, status_code)
+                category_match = re.search(r"category ([a-z_]+)", str(exc))
+                candidate = category_match.group(1) if category_match else "unknown"
+                category = candidate if candidate in _RESEND_SAFE_ERROR_CATEGORIES else "unknown"
+                LOGGER.warning(
+                    "Staging email acceptance failed (%s; status %d; category %s).",
+                    type(exc).__name__,
+                    status_code,
+                    category,
+                )
             else:
                 LOGGER.warning("Staging email acceptance failed (%s).", type(exc).__name__)
             raise HTTPException(status_code=502, detail="Email acceptance failed; provider details were not logged.")
