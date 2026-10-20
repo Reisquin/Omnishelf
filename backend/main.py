@@ -111,53 +111,6 @@ RESEND_SIMULATED_DELIVERY_RECIPIENT = "delivered@resend.dev"
 SMTP_ACCEPTANCE_ENABLED = os.getenv("OMNISHELF_SMTP_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 SMTP_TEST_RECIPIENT = os.getenv("SMTP_TEST_RECIPIENT", "").strip().lower()
 
-# Temporary read-only credential diagnostic; never logs secrets or provider response bodies.
-if os.getenv("OMNISHELF_RESEND_AUTH_DIAGNOSTIC", "false").strip().lower() in {"1", "true", "yes", "on"}:
-    if not RESEND_API_KEY:
-        print("RESEND_AUTH_DIAGNOSTIC key_present=False", flush=True)
-    else:
-        _diag_request = UrlRequest(
-            "https://api.resend.com/domains",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Accept": "application/json"},
-            method="GET",
-        )
-        try:
-            with urlopen(_diag_request, timeout=6) as _diag_response:
-                _diag_status = _diag_response.status
-                _diag_data = json.loads(_diag_response.read(128 * 1024).decode("utf-8"))
-            _diag_domains = _diag_data.get("data", []) if isinstance(_diag_data, dict) else []
-            print(
-                f"RESEND_AUTH_DIAGNOSTIC domains_status={_diag_status} "
-                f"domain_count={len(_diag_domains) if isinstance(_diag_domains, list) else 'unknown'}",
-                flush=True,
-            )
-        except HTTPError as _diag_error:
-            try:
-                _diag_body = _diag_error.read(8192)
-                _diag_payload = json.loads(_diag_body.decode("utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                _diag_body = b""
-                _diag_payload = {}
-            if not isinstance(_diag_payload, dict):
-                _diag_payload = {}
-            _diag_name = _diag_payload.get("name")
-            _diag_safe_names = {
-                "restricted_api_key", "invalid_api_key", "missing_api_key",
-                "unauthorized", "forbidden", "validation_error",
-                "rate_limit_exceeded", "domain_not_verified",
-                "invalid_from_address", "account_suspended",
-                "permission_denied", "access_denied", "not_authorized",
-            }
-            _diag_safe_name = _diag_name if isinstance(_diag_name, str) and _diag_name in _diag_safe_names else "other_or_unknown"
-            _diag_category = _safe_resend_error_category(_diag_body, _diag_error.code)
-            print(
-                f"RESEND_AUTH_DIAGNOSTIC domains_status={_diag_error.code} "
-                f"category={_diag_category} provider_error_name={_diag_safe_name}",
-                flush=True,
-            )
-        except (URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
-            print("RESEND_AUTH_DIAGNOSTIC domains_status=unavailable", flush=True)
-
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
 if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
