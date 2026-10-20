@@ -111,21 +111,6 @@ RESEND_SIMULATED_DELIVERY_RECIPIENT = "delivered@resend.dev"
 SMTP_ACCEPTANCE_ENABLED = os.getenv("OMNISHELF_SMTP_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 SMTP_TEST_RECIPIENT = os.getenv("SMTP_TEST_RECIPIENT", "").strip().lower()
 
-# Safe startup diagnostics: record configuration presence only, never values or credentials.
-print(
-    "EMAIL_CONFIG_DIAGNOSTIC "
-    f"provider={EMAIL_DELIVERY_PROVIDER} "
-    f"sender_present={bool(SMTP_FROM_EMAIL)} "
-    f"resend_key_present={bool(RESEND_API_KEY)} "
-    f"https_origin={PUBLIC_APP_ORIGIN.startswith('https://')} "
-    f"hosted={RENDER_ENVIRONMENT} "
-    f"registration_enabled={REGISTRATION_ENABLED} "
-    f"verification_required={EMAIL_VERIFICATION_REQUIRED} "
-    f"email_acceptance_enabled={SMTP_ACCEPTANCE_ENABLED} "
-    f"test_recipient_matches={SMTP_TEST_RECIPIENT == RESEND_SIMULATED_DELIVERY_RECIPIENT} "
-    f"configured={SMTP_CONFIGURED}",
-    flush=True,
-)
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
 if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
@@ -481,91 +466,6 @@ def _safe_resend_error_category(error_body: bytes, status_code: int) -> str:
         return "forbidden_by_provider"
     return "provider_rejection"
 
-
-
-def _run_resend_logs_diagnostic() -> None:
-    """Temporary, opt-in Resend Logs API probe; never log request bodies or secrets."""
-    if not RESEND_API_KEY or EMAIL_DELIVERY_PROVIDER != "resend_api":
-        print("RESEND_LOG_DIAGNOSTIC skipped=not_configured", flush=True)
-        return
-
-    headers = {"Authorization": f"Bearer {RESEND_API_KEY}", "Accept": "application/json"}
-    # Read-only endpoint checks separate credential validity from the Logs API permission.
-    for path in ("/api-keys", "/domains"):
-        request = UrlRequest("https://api.resend.com" + path, headers=headers, method="GET")
-        try:
-            with urlopen(request, timeout=8) as response:
-                status = response.status
-                payload = json.loads(response.read(256 * 1024).decode("utf-8"))
-            data_items = payload.get("data", []) if isinstance(payload, dict) else []
-            item_count = len(data_items) if isinstance(data_items, list) else 0
-            print(f"RESEND_READONLY_PROBE endpoint={path} status={status} items={item_count}", flush=True)
-        except HTTPError as exc:
-            print(f"RESEND_READONLY_PROBE endpoint={path} status={exc.code}", flush=True)
-        except (URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
-            print(f"RESEND_READONLY_PROBE endpoint={path} status=unavailable", flush=True)
-
-    list_request = UrlRequest("https://api.resend.com/logs", headers=headers, method="GET")
-    try:
-        with urlopen(list_request, timeout=8) as response:
-            log_status = response.status
-            listing = json.loads(response.read(512 * 1024).decode("utf-8"))
-    except HTTPError as exc:
-        print(f"RESEND_LOG_DIAGNOSTIC logs_api_status={exc.code}", flush=True)
-        return
-    except (URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
-        print("RESEND_LOG_DIAGNOSTIC logs_api_status=unavailable", flush=True)
-        return
-
-    entries = listing.get("data", []) if isinstance(listing, dict) else []
-    if not isinstance(entries, list):
-        entries = []
-    email_posts = [
-        item for item in entries
-        if isinstance(item, dict)
-        and item.get("endpoint") == "/emails"
-        and item.get("method") == "POST"
-    ]
-    forbidden = [
-        item for item in email_posts
-        if item.get("response_status") == 403 and isinstance(item.get("id"), str)
-    ]
-    print(
-        f"RESEND_LOG_DIAGNOSTIC logs_api_status={log_status} "
-        f"entries={len(entries)} email_posts={len(email_posts)} "
-        f"recent_email_post_statuses={','.join(str(x.get('response_status', 'unknown')) for x in email_posts[:8]) or 'none'}",
-        flush=True,
-    )
-    if not forbidden:
-        return
-
-    detail_request = UrlRequest(
-        "https://api.resend.com/logs/" + forbidden[0]["id"],
-        headers=headers,
-        method="GET",
-    )
-    try:
-        with urlopen(detail_request, timeout=8) as response:
-            detail = json.loads(response.read(128 * 1024).decode("utf-8"))
-    except (HTTPError, URLError, OSError, UnicodeDecodeError, json.JSONDecodeError):
-        print("RESEND_LOG_DIAGNOSTIC latest_403_detail=unavailable", flush=True)
-        return
-
-    response_body = detail.get("response_body", {}) if isinstance(detail, dict) else {}
-    if not isinstance(response_body, dict):
-        response_body = {}
-    category = _safe_resend_error_category(
-        json.dumps(response_body, ensure_ascii=True).encode("utf-8"), 403
-    )
-    print(
-        f"RESEND_LOG_DIAGNOSTIC latest_403_category={category} "
-        f"provider_error_name={response_body.get('name') if isinstance(response_body.get('name'), str) and response_body.get('name') in {'validation_error', 'restricted_api_key', 'invalid_api_key', 'missing_api_key', 'unauthorized', 'forbidden', 'rate_limit_exceeded'} else 'other_or_unknown'}",
-        flush=True,
-    )
-
-
-if os.getenv("OMNISHELF_RESEND_LOG_DIAGNOSTIC", "false").strip().lower() in {"1", "true", "yes", "on"}:
-    _run_resend_logs_diagnostic()
 
 
 def _send_email(recipient: str, subject: str, body: str) -> None:
