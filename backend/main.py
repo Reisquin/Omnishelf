@@ -110,6 +110,23 @@ SMTP_CONFIGURED = _email_configuration_is_complete(
 RESEND_SIMULATED_DELIVERY_RECIPIENT = "delivered@resend.dev"
 SMTP_ACCEPTANCE_ENABLED = os.getenv("OMNISHELF_SMTP_ACCEPTANCE_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 SMTP_TEST_RECIPIENT = os.getenv("SMTP_TEST_RECIPIENT", "").strip().lower()
+
+# Safe startup diagnostics: record configuration presence only, never values or credentials.
+LOGGER.info(
+    "Email configuration diagnostic: provider=%s sender_present=%s resend_key_present=%s "
+    "https_origin=%s hosted=%s registration_enabled=%s verification_required=%s "
+    "email_acceptance_enabled=%s test_recipient_matches=%s configured=%s",
+    EMAIL_DELIVERY_PROVIDER,
+    bool(SMTP_FROM_EMAIL),
+    bool(RESEND_API_KEY),
+    PUBLIC_APP_ORIGIN.startswith("https://"),
+    RENDER_ENVIRONMENT,
+    REGISTRATION_ENABLED,
+    EMAIL_VERIFICATION_REQUIRED,
+    SMTP_ACCEPTANCE_ENABLED,
+    SMTP_TEST_RECIPIENT == RESEND_SIMULATED_DELIVERY_RECIPIENT,
+    SMTP_CONFIGURED,
+)
 EMAIL_VERIFICATION_TTL_SECONDS = max(3600, int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "86400")))
 PASSWORD_RESET_TTL_SECONDS = max(600, int(os.getenv("PASSWORD_RESET_TTL_SECONDS", "1800")))
 if REGISTRATION_ENABLED and RENDER_ENVIRONMENT and not EMAIL_VERIFICATION_REQUIRED:
