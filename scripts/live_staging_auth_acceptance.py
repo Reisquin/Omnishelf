@@ -127,7 +127,7 @@ def assert_cleanup(oidc_token: str) -> dict:
 
 
 def send_smtp_acceptance(oidc_token: str) -> dict:
-    """Trigger exactly one sandbox-only SMTP acceptance message on staging."""
+    """Trigger one sandbox-only SMTP acceptance message per workflow attempt."""
     response = requests.post(
         BASE_URL + "/__staging/acceptance/smtp",
         headers={"Authorization": f"Bearer {oidc_token}", "Origin": ORIGIN},
