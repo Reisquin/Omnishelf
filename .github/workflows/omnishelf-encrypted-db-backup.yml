@@ -1,0 +1,163 @@
+name: OmniShelf encrypted Neon database backups
+
+on:
+  schedule:
+    # Daily at 02:30 UTC (08:00 India Standard Time).
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      confirm_backup:
+        description: "Choose yes to run a backup now."
+        required: true
+        default: "no"
+        type: choice
+        options:
+          - "no"
+          - "yes"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omnishelf-neon-b2-backup
+  cancel-in-progress: false
+
+jobs:
+  encrypted-database-backup:
+    if: ${{ github.event_name == 'schedule' || inputs.confirm_backup == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: main
+            secret_name: NEON_MAIN_DATABASE_URL
+            expected_host: ep-autumn-field-aoiinc7b.c-2.ap-southeast-1.aws.neon.tech
+          - name: 1-3-9-staging
+            secret_name: NEON_STAGING_DATABASE_URL
+            expected_host: ep-proud-scene-ao8eewxp.c-2.ap-southeast-1.aws.neon.tech
+    env:
+      NEON_DATABASE_URL: ${{ secrets[matrix.target.secret_name] }}
+      NEON_EXPECTED_HOST: ${{ matrix.target.expected_host }}
+      BACKUP_TARGET: ${{ matrix.target.name }}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      AWS_DEFAULT_REGION: us-east-005
+      AWS_EC2_METADATA_DISABLED: "true"
+      B2_BUCKET: omnishelf-db-backups
+      B2_ENDPOINT: https://s3.us-east-005.backblazeb2.com
+    steps:
+      - name: Validate required secrets and exact Neon branch target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$NEON_DATABASE_URL" || -z "$BACKUP_ENCRYPTION_PASSPHRASE" || -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" ]]; then
+            echo "::error::One or more required GitHub Actions secrets are missing."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          url = urlsplit(os.environ["NEON_DATABASE_URL"])
+          host = (url.hostname or "").lower()
+          database = url.path.lstrip("/").split("/", 1)[0]
+          passphrase = os.environ["BACKUP_ENCRYPTION_PASSPHRASE"]
+          if url.scheme not in {"postgres", "postgresql"}:
+              raise SystemExit("NEON_DATABASE_URL must be a PostgreSQL connection URL.")
+          if host != os.environ["NEON_EXPECTED_HOST"]:
+              raise SystemExit("The direct Neon host does not match the selected protected branch.")
+          if "pooler" in host:
+              raise SystemExit("Use the direct (unpooled) Neon connection URL, not a pooled URL.")
+          if database != "neondb":
+              raise SystemExit("This backup workflow is restricted to the OmniShelf neondb database.")
+          if not url.username or not url.password:
+              raise SystemExit("NEON_DATABASE_URL must include its database credentials.")
+          if len(passphrase) < 32 or "\n" in passphrase or "\r" in passphrase:
+              raise SystemExit("Use a single-line backup passphrase with at least 32 characters.")
+          print(f"Direct Neon target validated for the configured {os.environ['BACKUP_TARGET']} branch; credentials are not displayed.")
+          PY
+
+      - name: Install encryption and S3 client tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends awscli gnupg
+
+      - name: Create and encrypt a PostgreSQL custom-format backup
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          workdir="$RUNNER_TEMP/omnishelf-db-backup"
+          mkdir -p "$workdir"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          dump_name="omnishelf-$BACKUP_TARGET-neondb-$stamp.dump"
+          encrypted_name="$dump_name.gpg"
+          dump_file="$workdir/$dump_name"
+          encrypted_file="$workdir/$encrypted_name"
+          verified_file="$workdir/verified-$dump_name"
+
+          docker run --rm --pull=always \
+            --env NEON_DATABASE_URL \
+            --env BACKUP_FILE="$dump_name" \
+            --volume "$workdir:/backup" \
+            postgres:17-alpine \
+            sh -euc 'pg_dump --no-password --format=custom --no-owner --no-acl --file="/backup/$BACKUP_FILE" "$NEON_DATABASE_URL"'
+
+          if [[ ! -s "$dump_file" ]]; then
+            echo "::error::pg_dump did not create a non-empty archive."
+            exit 1
+          fi
+
+          # GnuPG reads the passphrase from stdin; it is never placed in a command argument or log.
+          printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --symmetric --cipher-algo AES256 --s2k-digest-algo SHA512 \
+              --compress-algo none --output "$encrypted_file" "$dump_file"
+
+          # Decrypt and inspect the archive before uploading it.
+          printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --output "$verified_file" --decrypt "$encrypted_file"
+          cmp --silent "$dump_file" "$verified_file"
+          docker run --rm --volume "$workdir:/backup" postgres:17-alpine \
+            pg_restore --list "/backup/verified-$dump_name" >/dev/null
+
+          (cd "$workdir" && sha256sum "$encrypted_name" > "$encrypted_name.sha256")
+          echo "encrypted_file=$encrypted_file" >> "$GITHUB_OUTPUT"
+          echo "encrypted_name=$encrypted_name" >> "$GITHUB_OUTPUT"
+          echo "checksum_file=$encrypted_file.sha256" >> "$GITHUB_OUTPUT"
+          echo "checksum_name=$encrypted_name.sha256" >> "$GITHUB_OUTPUT"
+          echo "Encrypted backup and decryption/archive verification succeeded."
+
+      - name: Upload encrypted backup to private Backblaze B2 bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          encrypted_file="${{ steps.backup.outputs.encrypted_file }}"
+          checksum_file="${{ steps.backup.outputs.checksum_file }}"
+          object_prefix="omnishelf/daily/$BACKUP_TARGET"
+          encrypted_key="$object_prefix/${{ steps.backup.outputs.encrypted_name }}"
+          checksum_key="$object_prefix/${{ steps.backup.outputs.checksum_name }}"
+
+          aws s3 cp "$encrypted_file" "s3://$B2_BUCKET/$encrypted_key" \
+            --endpoint-url "$B2_ENDPOINT" --region us-east-005 --only-show-errors
+          aws s3 cp "$checksum_file" "s3://$B2_BUCKET/$checksum_key" \
+            --endpoint-url "$B2_ENDPOINT" --region us-east-005 --only-show-errors
+
+          uploaded_size="$(aws s3api head-object --bucket "$B2_BUCKET" --key "$encrypted_key" \
+            --endpoint-url "$B2_ENDPOINT" --region us-east-005 --query ContentLength --output text)"
+          local_size="$(stat -c '%s' "$encrypted_file")"
+          if [[ "$uploaded_size" != "$local_size" ]]; then
+            echo "::error::Uploaded object size does not match the local encrypted backup."
+            exit 1
+          fi
+          echo "Encrypted backup for $BACKUP_TARGET uploaded and verified in s3://$B2_BUCKET/$encrypted_key."
+          echo "Only the encrypted archive and its SHA-256 checksum are uploaded."
+
+      - name: Remove temporary plaintext and encrypted files from the runner
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/omnishelf-db-backup"
