@@ -215,12 +215,12 @@ jobs:
           NEON_SOURCE_DATABASE_URL="$NEON_MAIN_DATABASE_URL" \
           RESTORED_DATABASE_URL="postgresql://postgres:$restore_password@127.0.0.1:54329/restored_main" \
           RESTORE_TARGET="main" \
-            python scripts/verify_backup_restore.py
+            python "$GITHUB_WORKSPACE/scripts/verify_backup_restore.py"
 
           NEON_SOURCE_DATABASE_URL="$NEON_STAGING_DATABASE_URL" \
           RESTORED_DATABASE_URL="postgresql://postgres:$restore_password@127.0.0.1:54329/restored_staging" \
           RESTORE_TARGET="1-3-9-staging" \
-            python scripts/verify_backup_restore.py
+            python "$GITHUB_WORKSPACE/scripts/verify_backup_restore.py"
 
           echo "Both restores matched their live Neon source schemas, constraints, Alembic versions, and exact table row counts."
 
