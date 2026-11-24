@@ -62,6 +62,110 @@ def inspect_database(dsn: str) -> dict[str, Any]:
                        constraint_type, is_deferrable, initially_deferred
                 FROM information_schema.table_constraints
                 WHERE constraint_schema NOT IN ('pg_catalog', 'information_schema')
+                  -- PostgreSQL generates these internal names from relation OIDs.
+                  -- They naturally differ after restoring into a different database.
+                  -- Column nullability is compared separately via information_schema.columns.
+                  AND NOT (
+                      constraint_type = 'CHECK'
+                      AND constraint_name ~ '^[0-9]+_[0-9]+_[0-9]+_not_null                """
+            )
+            constraints = cursor.fetchall()
+
+            if ("public", "alembic_version") not in tables:
+                raise RuntimeError("Database is missing public.alembic_version.")
+            cursor.execute(
+                "SELECT version_num FROM public.alembic_version ORDER BY version_num"
+            )
+            migrations = [row[0] for row in cursor.fetchall()]
+            if not migrations:
+                raise RuntimeError("Alembic migration version table is empty.")
+
+    return {
+        "tables": [f"{schema}.{table}" for schema, table in tables],
+        "row_counts": row_counts,
+        "columns": [list(row) for row in columns],
+        "constraints": [list(row) for row in constraints],
+        "migrations": migrations,
+    }
+
+
+def verify(target: str, source_dsn: str, restored_dsn: str) -> None:
+    source = inspect_database(source_dsn)
+    restored = inspect_database(restored_dsn)
+
+    checks = (
+        ("table names", source["tables"], restored["tables"]),
+        ("column definitions", source["columns"], restored["columns"]),
+        ("constraints", source["constraints"], restored["constraints"]),
+        ("Alembic migration versions", source["migrations"], restored["migrations"]),
+        ("exact table row counts", source["row_counts"], restored["row_counts"]),
+    )
+    failures = [
+        label for label, expected, actual in checks if expected != actual
+    ]
+    if failures:
+        details = {
+            "target": target,
+            "failed_checks": failures,
+            "source_table_count": len(source["tables"]),
+            "restored_table_count": len(restored["tables"]),
+        }
+        if source["row_counts"] != restored["row_counts"]:
+            details["row_count_differences"] = {
+                table: {
+                    "source": source["row_counts"].get(table),
+                    "restored": restored["row_counts"].get(table),
+                }
+                for table in sorted(
+                    set(source["row_counts"]) | set(restored["row_counts"])
+                )
+                if source["row_counts"].get(table) != restored["row_counts"].get(table)
+            }
+        raise RuntimeError(json.dumps(details, indent=2))
+
+    print(
+        json.dumps(
+            {
+                "target": target,
+                "result": "passed",
+                "application_tables": len(source["tables"]),
+                "columns": len(source["columns"]),
+                "constraints": len(source["constraints"]),
+                "alembic_versions": source["migrations"],
+                "table_row_counts_match": True,
+                "live_source_access": "read-only",
+                "restore_destination": "temporary local PostgreSQL database",
+            },
+            indent=2,
+        )
+    )
+
+
+def main() -> None:
+    required = (
+        "RESTORE_TARGET",
+        "NEON_SOURCE_DATABASE_URL",
+        "RESTORED_DATABASE_URL",
+    )
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
+
+    verify(
+        os.environ["RESTORE_TARGET"],
+        os.environ["NEON_SOURCE_DATABASE_URL"],
+        os.environ["RESTORED_DATABASE_URL"],
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        print(f"Restore verification failed: {exc}", file=sys.stderr)
+        raise
+
+                  )
                 ORDER BY constraint_schema, table_name, constraint_name
                 """
             )
