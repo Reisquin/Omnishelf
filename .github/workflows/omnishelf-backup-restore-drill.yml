@@ -132,7 +132,7 @@ jobs:
               key = latest["Key"]
               filename = PurePosixPath(key).name
               if not re.fullmatch(
-                  rf"omnishelf-{re.escape(target)}-neondb-[0-9]{{8}}T[0-9]{{6}}Z\\.dump\\.gpg",
+                  rf"omnishelf-{re.escape(target)}-neondb-[0-9]{{8}}T[0-9]{{6}}Z\.dump\.gpg",
                   filename,
               ):
                   raise SystemExit(f"Unexpected backup object name for {target}.")
@@ -153,7 +153,7 @@ jobs:
               fields = raw_checksum.read_text(encoding="ascii").split()
               if not fields or not re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
                   raise SystemExit(f"Invalid SHA-256 checksum file for {target}.")
-              checksum_path.write_text(f"{fields[0]}  {archive_path.name}\\n", encoding="ascii")
+              checksum_path.write_text(f"{fields[0]}  {archive_path.name}\n", encoding="ascii")
               raw_checksum.unlink()
               print(f"Downloaded latest {target} backup: {filename} (uploaded {latest['LastModified']}).")
           PY
@@ -163,7 +163,7 @@ jobs:
             archive="$target.dump.gpg"
             checksum="$archive.sha256"
             sha256sum --check "$checksum"
-            printf '%s\\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
+            printf '%s\n' "$BACKUP_ENCRYPTION_PASSPHRASE" | \
               gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
                 --output "$target.dump" --decrypt "$archive"
             docker run --rm --volume "$workdir:/backups:ro" postgres:17-alpine \
