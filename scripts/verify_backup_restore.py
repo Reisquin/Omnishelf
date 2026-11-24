@@ -1,8 +1,7 @@
-"""Verify downloaded OmniShelf Neon backups by restoring them into disposable PostgreSQL databases.
+"""Verify downloaded OmniShelf Neon backups against live sources.
 
-The script is called only from the isolated GitHub Actions restore-drill workflow.
-It compares each temporary restore to its corresponding live Neon branch using
-read-only queries. It never writes to Neon.
+The source Neon connections are read-only. Restores run only into disposable
+local PostgreSQL databases on the isolated GitHub Actions runner.
 """
 from __future__ import annotations
 
@@ -16,10 +15,9 @@ from psycopg import sql
 
 
 def inspect_database(dsn: str) -> dict[str, Any]:
-    """Return a read-only structural and row-count signature for a PostgreSQL DB."""
+    """Return a structural and row-count signature for a PostgreSQL database."""
     with psycopg.connect(dsn, connect_timeout=30) as connection:
         with connection.cursor() as cursor:
-            # Explicitly make the entire inspection transaction read-only.
             cursor.execute("SET TRANSACTION READ ONLY")
 
             cursor.execute(
@@ -62,6 +60,14 @@ def inspect_database(dsn: str) -> dict[str, Any]:
                        constraint_type, is_deferrable, initially_deferred
                 FROM information_schema.table_constraints
                 WHERE constraint_schema NOT IN ('pg_catalog', 'information_schema')
+                  -- PostgreSQL-generated NOT NULL labels are OID-derived, so
+                  -- they legitimately differ after restoring into a new database.
+                  -- Column nullability is compared separately above.
+                  AND NOT (
+                      constraint_type = 'CHECK'
+                      AND right(constraint_name, 9) = '_not_null'
+                      AND split_part(constraint_name, '_', 1) ~ '^[0-9]+'
+                  )
                 ORDER BY constraint_schema, table_name, constraint_name
                 """
             )
@@ -91,8 +97,9 @@ def verify(target: str, source_dsn: str, restored_dsn: str) -> None:
 
     checks = (
         ("table names", source["tables"], restored["tables"]),
-        ("column definitions", source["columns"], restored["columns"]),
-        ("constraints", source["constraints"], restored["constraints"]),
+        ("column definitions and nullability", source["columns"], restored["columns"]),
+        ("primary, foreign, unique and explicit check constraints",
+         source["constraints"], restored["constraints"]),
         ("Alembic migration versions", source["migrations"], restored["migrations"]),
         ("exact table row counts", source["row_counts"], restored["row_counts"]),
     )
@@ -100,7 +107,7 @@ def verify(target: str, source_dsn: str, restored_dsn: str) -> None:
         label for label, expected, actual in checks if expected != actual
     ]
     if failures:
-        details = {
+        details: dict[str, Any] = {
             "target": target,
             "failed_checks": failures,
             "source_table_count": len(source["tables"]),
@@ -117,6 +124,15 @@ def verify(target: str, source_dsn: str, restored_dsn: str) -> None:
                 )
                 if source["row_counts"].get(table) != restored["row_counts"].get(table)
             }
+        if source["constraints"] != restored["constraints"]:
+            source_constraints = {tuple(row) for row in source["constraints"]}
+            restored_constraints = {tuple(row) for row in restored["constraints"]}
+            details["missing_restored_constraints"] = [
+                list(row) for row in sorted(source_constraints - restored_constraints)
+            ][:30]
+            details["unexpected_restored_constraints"] = [
+                list(row) for row in sorted(restored_constraints - source_constraints)
+            ][:30]
         raise RuntimeError(json.dumps(details, indent=2))
 
     print(
@@ -125,7 +141,7 @@ def verify(target: str, source_dsn: str, restored_dsn: str) -> None:
                 "target": target,
                 "result": "passed",
                 "application_tables": len(source["tables"]),
-                "columns": len(source["columns"]),
+                "columns_and_nullability": len(source["columns"]),
                 "constraints": len(source["constraints"]),
                 "alembic_versions": source["migrations"],
                 "table_row_counts_match": True,
