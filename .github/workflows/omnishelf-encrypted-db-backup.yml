@@ -85,6 +85,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends awscli gnupg
 
+      - name: Verify Backblaze credentials and bucket access before dumping
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws s3api list-objects-v2 \
+            --bucket "$B2_BUCKET" \
+            --prefix "omnishelf/" \
+            --max-keys 1 \
+            --endpoint-url "$B2_ENDPOINT" \
+            --region us-east-005 \
+            --query KeyCount \
+            --output text >/dev/null
+          echo "Backblaze credentials and access to the configured bucket prefix are valid."
+
       - name: Create and encrypt a PostgreSQL custom-format backup
         id: backup
         shell: bash
